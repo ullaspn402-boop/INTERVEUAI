@@ -4278,7 +4278,13 @@ function Auth({ register = false }: { register?: boolean }) {
         return
       }
 
-      router.push('/dashboard')
+      const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+      const fromParam = searchParams?.get('from')
+      const redirectTarget = fromParam && fromParam.startsWith('/') && !fromParam.startsWith('/login') && !fromParam.startsWith('/register')
+        ? fromParam
+        : '/dashboard'
+
+      router.push(redirectTarget)
       router.refresh()
     } catch {
       setError('Unable to connect. Please check your connection and try again.')
@@ -4787,6 +4793,102 @@ function PublicSharePage({ publicId }: { publicId: string }) {
   )
 }
 
+function LandingPage() {
+  return (
+    <div className="min-h-screen bg-zinc-950 text-white flex flex-col justify-between selection:bg-primary selection:text-primary-foreground">
+      {/* Navbar */}
+      <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md sticky top-0 z-50 px-6 lg:px-12 py-4 flex items-center justify-between">
+        <Brand />
+        <div className="flex items-center gap-3">
+          <Link href="/login" className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white transition">
+            Sign in
+          </Link>
+          <Link href="/register" className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition shadow-lg">
+            Create Account
+          </Link>
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <main className="flex-1 flex flex-col items-center justify-center text-center px-6 py-16 lg:py-24 max-w-5xl mx-auto">
+        <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary mb-6 shadow-xl">
+          <Sparkles className="size-3.5" />
+          <span>AI-Powered Placement & Tech Interview Preparation</span>
+        </div>
+
+        <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight leading-[1.1] text-white">
+          Master Tech Interviews with <span className="bg-gradient-to-r from-primary via-indigo-400 to-purple-400 bg-clip-text text-transparent">Real-Time AI Practice</span>
+        </h1>
+
+        <p className="mt-6 text-base sm:text-lg leading-relaxed text-zinc-400 max-w-2xl">
+          Rehearse live video interviews with a talking AI interviewer, solve placement coding problems, study with a 7-mode AI Tutor, and track target role readiness.
+        </p>
+
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+          <Link href="/register" className="rounded-xl bg-primary px-6 py-3.5 text-sm font-semibold text-primary-foreground shadow-2xl hover:opacity-90 transition flex items-center gap-2">
+            Get Started Free <ArrowRight className="size-4" />
+          </Link>
+          <Link href="/login" className="rounded-xl border border-zinc-800 bg-zinc-900 px-6 py-3.5 text-sm font-semibold text-zinc-200 hover:bg-zinc-800 transition">
+            Sign In to Dashboard
+          </Link>
+        </div>
+
+        {/* Feature Cards Grid */}
+        <div className="mt-20 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-left w-full">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 flex flex-col gap-3 shadow-xl">
+            <div className="size-10 rounded-xl bg-rose-500/10 text-rose-400 grid place-items-center">
+              <Video className="size-5" />
+            </div>
+            <h3 className="font-semibold text-white text-base">Real AI Interviewer</h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Interactive 2-panel video call with speech-synchronized talking canvas avatar, voice recognition, and real-time evaluation.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 flex flex-col gap-3 shadow-xl">
+            <div className="size-10 rounded-xl bg-indigo-500/10 text-indigo-400 grid place-items-center">
+              <MessageSquareText className="size-5" />
+            </div>
+            <h3 className="font-semibold text-white text-base">7-Mode AI Tutor</h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Role-aware mentor supporting Learn, Practice, Hints, Mistake Analysis, Interview Prep, Revision, and Role Readiness.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 flex flex-col gap-3 shadow-xl">
+            <div className="size-10 rounded-xl bg-emerald-500/10 text-emerald-400 grid place-items-center">
+              <Code2 className="size-5" />
+            </div>
+            <h3 className="font-semibold text-white text-base">Coding Sandbox</h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Solve placement algorithms with multi-language safe code validator and instant submission feedback.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 flex flex-col gap-3 shadow-xl">
+            <div className="size-10 rounded-xl bg-amber-500/10 text-amber-400 grid place-items-center">
+              <BarChart3 className="size-5" />
+            </div>
+            <h3 className="font-semibold text-white text-base">Target Role Analytics</h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Track overall placement readiness score, radar skill breakdowns, and personalized weakness recommendations.
+            </p>
+          </div>
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-zinc-800 px-6 lg:px-12 py-6 text-center text-xs text-zinc-500 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <p>© {new Date().getFullYear()} INTERVUE AI. All rights reserved.</p>
+        <div className="flex items-center gap-4">
+          <Link href="/privacy" className="hover:text-zinc-300">Privacy Policy</Link>
+          <Link href="/terms" className="hover:text-zinc-300">Terms of Service</Link>
+        </div>
+      </footer>
+    </div>
+  )
+}
+
 export default function IntervueApp() {
   const pathname = usePathname()
   const router = useRouter()
@@ -4810,10 +4912,18 @@ export default function IntervueApp() {
             initials: data.user.initials,
             emailVerifiedAt: data.user.emailVerifiedAt ?? null,
           })
+        } else {
+          setUser(null)
+          if (pathname !== '/' && pathname !== '/privacy' && pathname !== '/terms' && !pathname.startsWith('/share/')) {
+            const loginUrl = `/login?from=${encodeURIComponent(pathname)}`
+            router.push(loginUrl)
+          }
         }
       })
-      .catch(() => {})
-  }, [auth, unauthPage])
+      .catch(() => {
+        setUser(null)
+      })
+  }, [auth, unauthPage, pathname, router])
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -4829,6 +4939,36 @@ export default function IntervueApp() {
   if (pathname === '/verify-email') return <VerifyEmailPage />
   if (pathname.startsWith('/share/')) return <PublicSharePage publicId={pathname.split('/share/')[1]} />
   if (auth) return <Auth register={pathname === '/register'} />
+  if (pathname === '/') {
+    if (!user) return <LandingPage />
+    return (
+      <div className={dark ? 'dark min-h-screen bg-background text-foreground' : 'min-h-screen bg-background text-foreground'}>
+        <div className="flex min-h-screen">
+          <Sidebar mobileOpen={mobileOpen} close={() => setMobileOpen(false)} />
+          {mobileOpen && (
+            <button
+              aria-label="Close navigation overlay"
+              onClick={() => setMobileOpen(false)}
+              className="fixed inset-0 z-30 bg-foreground/20 lg:hidden"
+            />
+          )}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <Topbar
+              open={() => setMobileOpen(true)}
+              dark={dark}
+              toggleTheme={() => setDark(!dark)}
+              user={user}
+              onLogout={handleLogout}
+            />
+            <main className="mx-auto w-full max-w-[1440px] flex-1 px-5 py-8 md:px-8 lg:py-10">
+              {user && !user.emailVerifiedAt && <EmailVerificationBanner userEmail={user.email} />}
+              <Dashboard />
+            </main>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const page =
     pathname === '/preparation' ? <Preparation /> :
