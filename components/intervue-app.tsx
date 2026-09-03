@@ -2419,6 +2419,8 @@ function LiveInterview({
   const [ttsMuted, setTtsMuted] = useState(false)
   const [cameraOn, setCameraOn] = useState(true)
   const [recognition, setRecognition] = useState<any>(null)
+  // Tracks whether the one-time opening introduction has finished
+  const [introPlayed, setIntroPlayed] = useState(false)
 
   // Media Stream Ref
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -2475,9 +2477,49 @@ function LiveInterview({
     }
   }, [cameraOn])
 
-  // Speech Synthesis (TTS) — Speak question out loud when new question arrives
+  // Speech Synthesis (TTS) — One-time AI Interviewer introduction before Question 1
   useEffect(() => {
-    if (!currentQuestion?.questionText || ttsMuted) return
+    // Fire exactly once: when session first loads and intro has not yet been played
+    if (!session || introPlayed) return
+    if (ttsMuted) {
+      // If muted, skip intro and go straight to questions
+      setIntroPlayed(true)
+      return
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+      const role = session.targetRole || 'Software Engineer'
+      const introText = `Hello! Welcome to your INTERVUE AI interview. I'm your AI interviewer, and I'll be guiding you through this session today. We'll be focusing on the ${role} role. I'll ask you a series of questions — take your time with each answer, and speak or type when you're ready. Let's begin.`
+      const utterance = new SpeechSynthesisUtterance(introText)
+      utterance.rate = 0.95
+      utterance.pitch = 1.05
+      utterance.onstart = () => setSpeaking(true)
+      utterance.onend = () => {
+        setSpeaking(false)
+        setIntroPlayed(true)
+      }
+      utterance.onerror = () => {
+        setSpeaking(false)
+        // On TTS error, still unblock questions so interview can continue
+        setIntroPlayed(true)
+      }
+      window.speechSynthesis.speak(utterance)
+    } else {
+      // Browser doesn't support TTS — skip intro silently
+      setIntroPlayed(true)
+    }
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session])
+
+  // Speech Synthesis (TTS) — Speak question out loud when new question arrives
+  // Gated by introPlayed so Q1 never starts before the introduction finishes.
+  useEffect(() => {
+    if (!introPlayed || !currentQuestion?.questionText || ttsMuted) return
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
       const utterance = new SpeechSynthesisUtterance(currentQuestion.questionText)
@@ -2493,7 +2535,7 @@ function LiveInterview({
         window.speechSynthesis.cancel()
       }
     }
-  }, [currentQuestion, ttsMuted])
+  }, [currentQuestion, ttsMuted, introPlayed])
 
   // Speech Recognition (STT) setup
   const toggleListening = () => {
