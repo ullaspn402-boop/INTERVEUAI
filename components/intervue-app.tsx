@@ -736,7 +736,7 @@ function Tutor() {
                       : 'self-start bg-muted'
                   }`}
                 >
-                  {m.content}
+                  {m.content.replace(/^\[MODE:[A-Z_]+\]\s*/, '')}
                 </div>
               ))
             )}
@@ -1793,6 +1793,7 @@ function Interview() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
 
   // ── Setup form state ──
+  const [candidateName, setCandidateName] = useState<string>('Candidate')
   const [type, setType] = useState<string>('TECHNICAL')
   const [difficulty, setDifficulty] = useState<string>('MEDIUM')
   const [questionCount, setQuestionCount] = useState<number>(5)
@@ -1809,17 +1810,18 @@ function Interview() {
   const [starting, setStarting] = useState(false)
   const [setupError, setSetupError] = useState<string | null>(null)
 
-  // Load subjects, user profile (for targetRole), and interview history on mount
+  // Load subjects, user profile (for targetRole and candidate name), and interview history on mount
   useEffect(() => {
     fetch('/api/subjects')
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.subjects) setAvailableSubjects(d.subjects) })
       .catch(() => {})
 
-    // Pre-fill targetRole from user's actual profile selection
+    // Pre-fill candidateName & targetRole from user's actual profile selection
     fetch('/api/auth/me')
       .then(r => r.ok ? r.json() : null)
       .then(d => {
+        if (d?.user?.name) setCandidateName(d.user.name)
         const role = d?.user?.targetRole
         setTargetRole(role || 'Software Engineer')
       })
@@ -1900,6 +1902,7 @@ function Interview() {
     return (
       <LiveInterview
         sessionId={activeSessionId}
+        candidateName={candidateName}
         onComplete={() => setMode('result')}
         onAbandon={() => {
           setActiveSessionId(null)
@@ -1937,6 +1940,17 @@ function Interview() {
           )}
 
           <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
+              Candidate Name
+              <input
+                type="text"
+                value={candidateName}
+                onChange={e => setCandidateName(e.target.value)}
+                placeholder="Your full name"
+                className="rounded-lg border border-input bg-background px-3 py-2.5 font-normal outline-none focus:ring-2 focus:ring-ring"
+              />
+            </label>
+
             <label className="flex flex-col gap-2 text-sm font-medium">
               Interview type
               <select
@@ -2385,10 +2399,12 @@ function TalkingInterviewerAvatar({
 
 function LiveInterview({
   sessionId,
+  candidateName,
   onComplete,
   onAbandon,
 }: {
   sessionId: string
+  candidateName?: string
   onComplete: () => void
   onAbandon: () => void
 }) {
@@ -2416,6 +2432,9 @@ function LiveInterview({
   // Audio / Visual Speech & Camera States
   const [speaking, setSpeaking] = useState(false)
   const [listening, setListening] = useState(false)
+  const [micState, setMicState] = useState<'OFF' | 'STARTING' | 'LISTENING' | 'STOPPED' | 'ERROR'>('OFF')
+  const [micError, setMicError] = useState<string | null>(null)
+  const [cameraError, setCameraError] = useState<string | null>(null)
   const [ttsMuted, setTtsMuted] = useState(false)
   const [cameraOn, setCameraOn] = useState(true)
   const [recognition, setRecognition] = useState<any>(null)
@@ -2454,13 +2473,17 @@ function LiveInterview({
         .then(stream => {
           if (!active) { stream.getTracks().forEach(t => t.stop()); return; }
           streamRef.current = stream
+          setCameraError(null)
           if (videoRef.current) {
             videoRef.current.srcObject = stream
           }
         })
         .catch(err => {
           console.warn('Webcam stream unavailable:', err)
-          if (active) setCameraOn(false)
+          if (active) {
+            setCameraError('Camera access was denied or unavailable. You can continue without video.')
+            setCameraOn(false)
+          }
         })
     } else {
       if (streamRef.current) {
@@ -2489,7 +2512,8 @@ function LiveInterview({
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
       const role = session.targetRole || 'Software Engineer'
-      const introText = `Hello! Welcome to your INTERVUE AI interview. I'm your AI interviewer, and I'll be guiding you through this session today. We'll be focusing on the ${role} role. I'll ask you a series of questions — take your time with each answer, and speak or type when you're ready. Let's begin.`
+      const nameGreeting = candidateName?.trim() ? `Hello ${candidateName.trim()}!` : 'Hello!'
+      const introText = `${nameGreeting} Welcome to your INTERVUE AI interview. I'm your AI interviewer, and I'll be guiding you through this session today. We'll be conducting a ${session.difficulty.toLowerCase()} level ${session.interviewType.toLowerCase()} interview focusing on the ${role} role. Take your time with each response, and speak or type when you're ready. Let's begin.`
       const utterance = new SpeechSynthesisUtterance(introText)
       utterance.rate = 0.95
       utterance.pitch = 1.05
@@ -2537,21 +2561,26 @@ function LiveInterview({
     }
   }, [currentQuestion, ttsMuted, introPlayed])
 
-  // Speech Recognition (STT) setup
+  // Speech Recognition (STT) setup with robust state machine
   const toggleListening = () => {
     if (typeof window === 'undefined') return
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
 
     if (!SpeechRecognition) {
-      setError('Speech recognition is not supported in this browser. You can type your answer in the text box.')
+      setMicError('Speech recognition is not supported in this browser. You can type your answer in the text box below.')
+      setMicState('ERROR')
       return
     }
 
     if (listening && recognition) {
-      recognition.stop()
+      try { recognition.stop() } catch {}
       setListening(false)
+      setMicState('STOPPED')
       return
     }
+
+    setMicState('STARTING')
+    setMicError(null)
 
     try {
       const rec = new SpeechRecognition()
@@ -2559,24 +2588,43 @@ function LiveInterview({
       rec.interimResults = true
       rec.lang = 'en-US'
 
-      rec.onstart = () => setListening(true)
+      rec.onstart = () => {
+        setListening(true)
+        setMicState('LISTENING')
+        setMicError(null)
+      }
       rec.onresult = (event: any) => {
         let transcript = ''
         for (let i = event.resultIndex; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript
         }
-        setAnswerText(transcript)
+        if (transcript.trim()) {
+          setAnswerText(transcript)
+        }
       }
-      rec.onerror = () => {
+      rec.onerror = (event: any) => {
         setListening(false)
+        setMicState('ERROR')
+        if (event?.error === 'not-allowed') {
+          setMicError('Microphone access was denied. You can type your answer instead.')
+        } else if (event?.error === 'no-speech') {
+          setMicError('No speech detected. Please speak clearly into your microphone or type your response.')
+        } else {
+          setMicError(`Microphone error (${event?.error || 'unavailable'}). Text fallback is fully available.`)
+        }
       }
-      rec.onend = () => setListening(false)
+      rec.onend = () => {
+        setListening(false)
+        setMicState(prev => prev === 'LISTENING' ? 'STOPPED' : prev)
+      }
 
       rec.start()
       setRecognition(rec)
     } catch (err) {
       console.error('Speech recognition error:', err)
       setListening(false)
+      setMicState('ERROR')
+      setMicError('Failed to activate microphone. You can type your answer instead.')
     }
   }
 
@@ -2585,8 +2633,9 @@ function LiveInterview({
     if (!answerText.trim() || submitting || !currentQuestion) return
 
     if (listening && recognition) {
-      recognition.stop()
+      try { recognition.stop() } catch {}
       setListening(false)
+      setMicState('STOPPED')
     }
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -2616,10 +2665,21 @@ function LiveInterview({
       setAnswerText('')
 
       if (data.isLastQuestion) {
-        // Complete session
+        // Complete session & speak closing TTS
         const compRes = await fetch(`/api/interviews/${sessionId}/complete`, { method: 'POST' })
         if (compRes.ok) {
-          onComplete()
+          if (typeof window !== 'undefined' && 'speechSynthesis' in window && !ttsMuted) {
+            window.speechSynthesis.cancel()
+            const closingText = `Thank you for completing the interview, ${candidateName || 'Candidate'}. Your responses have been evaluated, and your interview results are ready.`
+            const utterance = new SpeechSynthesisUtterance(closingText)
+            utterance.rate = 1.0
+            utterance.onstart = () => setSpeaking(true)
+            utterance.onend = () => { setSpeaking(false); onComplete(); }
+            utterance.onerror = () => { setSpeaking(false); onComplete(); }
+            window.speechSynthesis.speak(utterance)
+          } else {
+            onComplete()
+          }
         } else {
           setError('Failed to finalize interview summary.')
         }
@@ -2696,6 +2756,20 @@ function LiveInterview({
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-xs text-destructive flex items-center gap-2">
           <AlertCircle className="size-4 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {micError && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-2">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>{micError}</span>
+        </div>
+      )}
+
+      {cameraError && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-2">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>{cameraError}</span>
         </div>
       )}
 
