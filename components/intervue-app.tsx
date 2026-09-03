@@ -446,7 +446,7 @@ function Preparation() {
               <p className="mt-1 text-sm text-muted-foreground">{detail} complete</p>
               <div className="mt-4"><ProgressBar value={value} /></div>
               <p className="mt-3 text-xs text-muted-foreground">Next: {nextTopicName}</p>
-              <button onClick={() => router.push('/preparation')} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary">Continue <ArrowRight className="size-4" /></button>
+              <button onClick={() => router.push(title === 'SQL' ? '/coding' : '/quizzes')} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary">Continue <ArrowRight className="size-4" /></button>
             </div>
           ))}
         </div>
@@ -1352,6 +1352,7 @@ function Coding() {
         title="Think in code."
         description="Solve placement coding problems with persistent submissions and language support."
         action="Random challenge"
+        onAction={pickRandomChallenge}
       />
 
       <div className="grid gap-4 xl:grid-cols-[.72fr_1.28fr]">
@@ -2617,10 +2618,56 @@ function Analytics() {
 
 function Profile() {
   const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [userData, setUserData] = useState<{
+    id: string
+    name: string
+    email: string
+    initials: string
+    college: string | null
+    degree: string | null
+    graduationYear: number | null
+    targetRole: string | null
+    targetCompanies: string | null
+    emailVerifiedAt: string | null
+  } | null>(null)
+
+  const [formValues, setFormValues] = useState({
+    name: '',
+    college: '',
+    degree: '',
+    graduationYear: '',
+    targetRole: '',
+    targetCompanies: '',
+  })
+
   const [referralInfo, setReferralInfo] = useState<{ referralCode: string; referralCount: number; referrals: any[] } | null>(null)
   const [copied, setCopied] = useState(false)
 
+  const fetchProfile = async () => {
+    try {
+      const res = await fetch('/api/auth/me')
+      if (res.ok) {
+        const json = await res.json()
+        if (json.user) {
+          setUserData(json.user)
+          setFormValues({
+            name: json.user.name || '',
+            college: json.user.college || '',
+            degree: json.user.degree || '',
+            graduationYear: json.user.graduationYear ? String(json.user.graduationYear) : '',
+            targetRole: json.user.targetRole || '',
+            targetCompanies: json.user.targetCompanies || '',
+          })
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load profile:', err)
+    }
+  }
+
   useEffect(() => {
+    fetchProfile()
     fetch('/api/referrals')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -2628,6 +2675,45 @@ function Profile() {
       })
       .catch(() => {})
   }, [])
+
+  async function handleSave() {
+    if (!editing) {
+      setEditing(true)
+      return
+    }
+
+    setSaving(true)
+    try {
+      const payload: any = {
+        name: formValues.name.trim() || undefined,
+        college: formValues.college.trim() || undefined,
+        degree: formValues.degree.trim() || undefined,
+        targetRole: formValues.targetRole.trim() || undefined,
+        targetCompanies: formValues.targetCompanies.trim() || undefined,
+      }
+      if (formValues.graduationYear.trim()) {
+        const yr = parseInt(formValues.graduationYear.trim(), 10)
+        if (!isNaN(yr)) payload.graduationYear = yr
+      }
+
+      const res = await fetch('/api/auth/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        const json = await res.json()
+        if (json.user) {
+          setUserData(json.user)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to save profile:', err)
+    } finally {
+      setSaving(false)
+      setEditing(false)
+    }
+  }
 
   function copyReferralLink() {
     if (!referralInfo?.referralCode) return
@@ -2637,30 +2723,110 @@ function Profile() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const name = userData?.name || 'User Profile'
+  const email = userData?.email || ''
+  const initials = userData?.initials || name.slice(0, 2).toUpperCase()
+  const isVerified = Boolean(userData?.emailVerifiedAt)
+
   return (
     <div className="flex flex-col gap-7">
       <PageHeading eyebrow="Your account" title="Profile & settings" description="Keep your goals, preparation preferences, and referral code up to date." />
       <section className={`${card} max-w-3xl p-6`}>
         <div className="flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-center">
-          <span className="grid size-16 place-items-center rounded-full bg-primary text-xl font-semibold text-primary-foreground">JD</span>
+          <span className="grid size-16 place-items-center rounded-full bg-primary text-xl font-semibold text-primary-foreground">{initials}</span>
           <div className="flex-1">
-            <h2 className="text-lg font-semibold">Jordan Davis</h2>
-            <p className="mt-1 text-sm text-muted-foreground">jordan.davis@example.com · Verified User</p>
+            <h2 className="text-lg font-semibold">{name}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{email} · {isVerified ? 'Verified Account' : 'Unverified Account'}</p>
           </div>
-          <button onClick={() => setEditing(!editing)} className={outlineButton}>{editing ? 'Save changes' : 'Edit profile'}</button>
+          <button onClick={handleSave} disabled={saving} className={outlineButton}>
+            {saving ? 'Saving...' : editing ? 'Save changes' : 'Edit profile'}
+          </button>
         </div>
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
-          {[['College', 'Northbridge Institute of Technology'], ['Degree', 'B.Tech · Computer Science'], ['Graduation year', '2027'], ['Target role', 'Software Engineer'], ['Target companies', 'Product and service companies'], ['Preparation goal', 'Placement-ready by December']].map(([label, value]) => (
-            <label key={label} className="flex flex-col gap-2 text-sm font-medium">
-              {label}
-              {editing ? <input defaultValue={value} className="rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-ring" /> : <span className="rounded-lg bg-muted px-3 py-2.5 text-sm font-normal">{value}</span>}
-            </label>
-          ))}
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            Full Name
+            {editing ? (
+              <input
+                value={formValues.name}
+                onChange={(e) => setFormValues({ ...formValues, name: e.target.value })}
+                className="rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-ring"
+              />
+            ) : (
+              <span className="rounded-lg bg-muted px-3 py-2.5 text-sm font-normal">{userData?.name || 'Not specified'}</span>
+            )}
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            College / Institution
+            {editing ? (
+              <input
+                value={formValues.college}
+                onChange={(e) => setFormValues({ ...formValues, college: e.target.value })}
+                placeholder="e.g. Stanford University"
+                className="rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-ring"
+              />
+            ) : (
+              <span className="rounded-lg bg-muted px-3 py-2.5 text-sm font-normal">{userData?.college || 'Not specified'}</span>
+            )}
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            Degree / Major
+            {editing ? (
+              <input
+                value={formValues.degree}
+                onChange={(e) => setFormValues({ ...formValues, degree: e.target.value })}
+                placeholder="e.g. B.Tech · Computer Science"
+                className="rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-ring"
+              />
+            ) : (
+              <span className="rounded-lg bg-muted px-3 py-2.5 text-sm font-normal">{userData?.degree || 'Not specified'}</span>
+            )}
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            Graduation Year
+            {editing ? (
+              <input
+                value={formValues.graduationYear}
+                onChange={(e) => setFormValues({ ...formValues, graduationYear: e.target.value })}
+                placeholder="e.g. 2027"
+                type="number"
+                className="rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-ring"
+              />
+            ) : (
+              <span className="rounded-lg bg-muted px-3 py-2.5 text-sm font-normal">{userData?.graduationYear || 'Not specified'}</span>
+            )}
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            Target Role
+            {editing ? (
+              <input
+                value={formValues.targetRole}
+                onChange={(e) => setFormValues({ ...formValues, targetRole: e.target.value })}
+                placeholder="e.g. Software Engineer"
+                className="rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-ring"
+              />
+            ) : (
+              <span className="rounded-lg bg-muted px-3 py-2.5 text-sm font-normal">{userData?.targetRole || 'Software Engineer'}</span>
+            )}
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            Target Companies
+            {editing ? (
+              <input
+                value={formValues.targetCompanies}
+                onChange={(e) => setFormValues({ ...formValues, targetCompanies: e.target.value })}
+                placeholder="e.g. Tech product & service companies"
+                className="rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-ring"
+              />
+            ) : (
+              <span className="rounded-lg bg-muted px-3 py-2.5 text-sm font-normal">{userData?.targetCompanies || 'Product & service companies'}</span>
+            )}
+          </label>
         </div>
+
         <div className="mt-7 border-t border-border pt-6">
-          <h2 className="font-semibold">Skills</h2>
+          <h2 className="font-semibold">Core Technical Competencies</h2>
           <div className="mt-3 flex flex-wrap gap-2">
-            {['JavaScript', 'Python', 'SQL', 'React', 'Data Structures'].map((x) => (
+            {['Data Structures', 'Algorithms', 'System Design', 'DBMS & SQL', 'Operating Systems', 'Computer Networks'].map((x) => (
               <span key={x} className="rounded-md bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary">{x}</span>
             ))}
           </div>

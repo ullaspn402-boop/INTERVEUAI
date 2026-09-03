@@ -73,3 +73,60 @@ export async function GET() {
     )
   }
 }
+
+export async function PATCH(request: any) {
+  try {
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    const { ProfileUpdateSchema } = await import('@/lib/validation')
+    const result = ProfileUpdateSchema.safeParse(body)
+    if (!result.success) {
+      return NextResponse.json({ error: 'Invalid input data' }, { status: 400 })
+    }
+
+    const updated = await db.user.update({
+      where: { id: session.userId },
+      data: result.data,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        college: true,
+        degree: true,
+        graduationYear: true,
+        targetRole: true,
+        targetCompanies: true,
+        emailVerifiedAt: true,
+        createdAt: true,
+      },
+    })
+
+    const initials = updated.name
+      .split(' ')
+      .map((part) => part[0]?.toUpperCase() ?? '')
+      .slice(0, 2)
+      .join('')
+
+    return NextResponse.json({
+      user: {
+        ...updated,
+        initials,
+        createdAt: updated.createdAt.toISOString(),
+      },
+    })
+  } catch (error) {
+    console.error('[PATCH /api/auth/me]', error)
+    return NextResponse.json({ error: 'Failed to update profile.' }, { status: 500 })
+  }
+}
+
