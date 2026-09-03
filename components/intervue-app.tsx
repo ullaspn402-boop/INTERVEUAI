@@ -7,7 +7,8 @@ import {
   ArrowRight, BarChart3, BookOpen, BrainCircuit, Check, ChevronDown, Code2, Filter, Flame,
   Home, LineChart, Menu, MessageSquareText, Mic, Moon, Play, Search, Settings2, Sparkles,
   Sun, Target, Trophy, UserRound, Video, X, Camera, Clock3, RotateCcw, Send, SlidersHorizontal,
-  CheckCircle2, Circle, AlertCircle, Lightbulb, LogOut, Eye, EyeOff, Loader2, History as HistoryIcon
+  CheckCircle2, Circle, AlertCircle, Lightbulb, LogOut, Eye, EyeOff, Loader2, History as HistoryIcon,
+  Bot, Volume2, VolumeX
 } from 'lucide-react'
 
 const nav = [
@@ -796,18 +797,28 @@ function Tutor() {
                 </div>
               )}
 
-              {/* Suggested Prompts */}
+              {/* 7 Role-Aware Tutor Mode Quick Action Shortcuts */}
               {activeSessionId && (
                 <div className="mt-5">
-                  <h2 className="text-sm font-semibold mb-3">Suggested prompts</h2>
-                  <div className="flex flex-col gap-2">
-                    {suggestedPrompts.map(prompt => (
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Tutor Modes & Quick Actions</h2>
+                  <div className="grid gap-2">
+                    {[
+                      { label: '📚 Teach me this', prompt: '[MODE:LEARN] Explain the core concepts, patterns, and trade-offs for my current topic in simple terms.' },
+                      { label: '🎯 Practice question', prompt: '[MODE:PRACTICE] Give me a placement practice question for my target role and let me answer.' },
+                      { label: '💡 Give me a hint', prompt: '[MODE:HINT] Give me a guiding hint for my current topic or problem without giving away the final answer.' },
+                      { label: '🔍 Explain my mistake', prompt: '[MODE:EXPLAIN_MISTAKE] Explain common conceptual mistakes candidates make in this topic during technical interviews.' },
+                      { label: '🎙️ Interview practice', prompt: '[MODE:INTERVIEW_PREP] Ask me a technical interview question tailored to my selected target career role.' },
+                      { label: '🔁 Review weak areas', prompt: '[MODE:REVISION] Help me revise my weak topics and key edge cases before my placement interviews.' },
+                      { label: '🚀 Prepare for my role', prompt: '[MODE:ROLE_READINESS] What specific skills and projects do I need to master next for my target role?' },
+                    ].map((item) => (
                       <button
-                        key={prompt}
-                        onClick={() => { setInput(prompt); }}
-                        className="rounded-lg border border-border p-3 text-left text-xs leading-5 transition hover:bg-accent"
+                        key={item.label}
+                        onClick={() => {
+                          setInput(item.prompt)
+                        }}
+                        className="rounded-lg border border-border p-2.5 text-left text-xs font-medium transition hover:border-primary hover:bg-primary/5"
                       >
-                        {prompt}
+                        {item.label}
                       </button>
                     ))}
                   </div>
@@ -1284,7 +1295,7 @@ function Coding() {
     }
   }
 
-  // Solution submission handler
+  // Solution submission & validation handler
   async function handleSubmitSolution() {
     if (!selectedProblemId || !code.trim()) return
     setSubmitting(true)
@@ -1306,7 +1317,25 @@ function Coding() {
         throw new Error(data.error || 'Submission failed')
       }
 
-      setSubmitNotice(`Solution submitted successfully! Status: PENDING (Submission ID: ${data.id.slice(-6)})`)
+      const sub = data.submission || data
+      const status = sub.status || 'PENDING'
+      const passed = sub.testCasesPassed ?? 0
+      const total = sub.testCasesTotal ?? 1
+      const failed = sub.failedTestCase
+
+      if (status === 'ACCEPTED') {
+        setSubmitNotice(`Accepted — All ${passed}/${total} test cases passed!`)
+      } else if (status === 'WRONG_ANSWER') {
+        let msg = `Wrong Answer — ${passed} / ${total} test cases passed.`
+        if (failed && !failed.isHidden) {
+          msg += ` Failed Test (Input: ${failed.input} | Expected: ${failed.expected} | Received: ${failed.received})`
+        }
+        setSubmitError(msg)
+      } else if (status === 'COMPILE_ERROR') {
+        setSubmitError(`Compilation Error — ${sub.errorMessage || 'Syntax error in solution.'}`)
+      } else {
+        setSubmitNotice(`Status: ${status} (${passed}/${total} tests passed)`)
+      }
 
       // Refresh submission history
       const subRes = await fetch(`/api/coding/submissions?problemId=${selectedProblemId}`)
@@ -1628,14 +1657,11 @@ function Coding() {
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={() =>
-                        setSubmitNotice(
-                          'Note: Submissions are stored safely in database with status PENDING. Arbitrary code execution is disabled for server security.'
-                        )
-                      }
-                      className="rounded-md border border-background/20 px-3.5 py-2 text-xs font-semibold text-background transition hover:bg-background/10"
+                      onClick={handleSubmitSolution}
+                      disabled={submitting || !code.trim()}
+                      className="rounded-md border border-background/20 px-3.5 py-2 text-xs font-semibold text-background transition hover:bg-background/10 disabled:opacity-50"
                     >
-                      Run
+                      {submitting ? 'Validating...' : 'Run Code'}
                     </button>
                     <button
                       onClick={handleSubmitSolution}
@@ -2020,6 +2046,12 @@ function LiveInterview({
   const [error, setError] = useState<string | null>(null)
   const [lastEval, setLastEval] = useState<{ overallScore: number; feedback: string; strengths?: string[]; improvements?: string[] } | null>(null)
 
+  // Audio / Visual Speech States
+  const [speaking, setSpeaking] = useState(false)
+  const [listening, setListening] = useState(false)
+  const [ttsMuted, setTtsMuted] = useState(false)
+  const [recognition, setRecognition] = useState<any>(null)
+
   // Load session state
   const fetchSession = async () => {
     try {
@@ -2040,9 +2072,82 @@ function LiveInterview({
     fetchSession()
   }, [sessionId])
 
+  // Speech Synthesis (TTS) — Speak question out loud when new question arrives
+  useEffect(() => {
+    if (!currentQuestion?.questionText || ttsMuted) return
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+      const utterance = new SpeechSynthesisUtterance(currentQuestion.questionText)
+      utterance.rate = 1.0
+      utterance.pitch = 1.0
+      utterance.onstart = () => setSpeaking(true)
+      utterance.onend = () => setSpeaking(false)
+      utterance.onerror = () => setSpeaking(false)
+      window.speechSynthesis.speak(utterance)
+    }
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+      }
+    }
+  }, [currentQuestion, ttsMuted])
+
+  // Speech Recognition (STT) setup
+  const toggleListening = () => {
+    if (typeof window === 'undefined') return
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+
+    if (!SpeechRecognition) {
+      setError('Speech recognition is not supported in this browser. You can type your answer in the text box.')
+      return
+    }
+
+    if (listening && recognition) {
+      recognition.stop()
+      setListening(false)
+      return
+    }
+
+    try {
+      const rec = new SpeechRecognition()
+      rec.continuous = true
+      rec.interimResults = true
+      rec.lang = 'en-US'
+
+      rec.onstart = () => setListening(true)
+      rec.onresult = (event: any) => {
+        let transcript = ''
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript
+        }
+        setAnswerText(transcript)
+      }
+      rec.onerror = () => {
+        setListening(false)
+      }
+      rec.onend = () => setListening(false)
+
+      rec.start()
+      setRecognition(rec)
+    } catch (err) {
+      console.error('Speech recognition error:', err)
+      setListening(false)
+    }
+  }
+
   // Submit answer to current question
   async function handleSubmitAnswer() {
     if (!answerText.trim() || submitting || !currentQuestion) return
+
+    if (listening && recognition) {
+      recognition.stop()
+      setListening(false)
+    }
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+    }
 
     setSubmitting(true)
     setError(null)
@@ -2088,6 +2193,9 @@ function LiveInterview({
 
   // Abandon session
   async function handleAbandonSession() {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
     try {
       await fetch(`/api/interviews/${sessionId}/abandon`, { method: 'POST' })
     } catch {}
@@ -2098,7 +2206,7 @@ function LiveInterview({
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-3">
         <Loader2 className="size-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Loading interview simulation…</p>
+        <p className="text-sm text-muted-foreground">Loading video interview simulation…</p>
       </div>
     )
   }
@@ -2109,24 +2217,39 @@ function LiveInterview({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Header */}
+      {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">Live Text Simulation</p>
+          <div className="flex items-center gap-2">
+            <span className="inline-block size-2 rounded-full bg-rose-500 animate-ping"></span>
+            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">Live Video Interview</p>
+          </div>
           <h1 className="mt-1 text-2xl font-semibold">
             {session?.title || `${session?.difficulty} ${session?.interviewType} Interview`}
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Target Role: {session?.targetRole || 'Software Engineer'} {session?.subject && `· ${session.subject.name}`}
+            Target Role: <strong className="text-foreground">{session?.targetRole || 'Software Engineer'}</strong> {session?.subject && `· ${session.subject.name}`}
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              const newMuted = !ttsMuted
+              setTtsMuted(newMuted)
+              if (newMuted && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                window.speechSynthesis.cancel()
+                setSpeaking(false)
+              }
+            }}
+            className={outlineButton}
+          >
+            {ttsMuted ? <VolumeX className="size-4 text-muted-foreground" /> : <Volume2 className="size-4 text-primary" />}
+            {ttsMuted ? 'Muted' : 'Audio On'}
+          </button>
           <span className="rounded-md bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
             Question {qNum} of {totalQ}
           </span>
-          <button
-            onClick={handleAbandonSession}
-          >
+          <button onClick={handleAbandonSession} className="rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/10">
             End Interview
           </button>
         </div>
@@ -2138,115 +2261,145 @@ function LiveInterview({
       </div>
 
       {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
-          {error}
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive flex items-center gap-2">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
-      {/* Main Grid */}
-      <div className="grid gap-4 lg:grid-cols-[1.3fr_.7fr]">
-        {/* Question & Answer Box */}
-        <section className={`${card} flex flex-col justify-between p-6`}>
-          <div>
-            {/* Question */}
-            <div className="flex items-center gap-3 border-b border-border pb-4">
-              <span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground">
-                <Sparkles className="size-5" />
+      {/* Main Video Interview Grid */}
+      <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr]">
+        {/* Left: Visual AI Interviewer Video Box */}
+        <section className={`${card} flex flex-col items-center justify-between p-6 bg-gradient-to-b from-card via-card to-muted/40 relative overflow-hidden border-2 border-primary/20`}>
+          <div className="w-full flex items-center justify-between border-b border-border pb-3">
+            <div className="flex items-center gap-2">
+              <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary uppercase">
+                AI Interviewer
               </span>
-              <div>
-                <p className="font-semibold text-sm">AI Interviewer</p>
-                <p className="text-xs text-muted-foreground">Difficulty: {currentQuestion?.difficulty || session?.difficulty}</p>
-              </div>
+              <span className="text-[10px] text-muted-foreground">Virtual Interviewer Avatar</span>
             </div>
-
-            <div className="mt-5">
-              <h2 className="text-lg font-medium leading-7 text-foreground">
-                {currentQuestion?.questionText || 'Loading next question…'}
-              </h2>
-            </div>
-
-            {/* Previous Answer Evaluation Notice (if available) */}
-            {lastEval && (
-              <div className="mt-5 rounded-lg border border-primary/20 bg-primary/5 p-4 text-xs leading-5">
-                <div className="flex items-center justify-between font-semibold text-primary">
-                  <span>Evaluation for Q{qNum - 1}: {lastEval.overallScore}/10</span>
-                </div>
-                <p className="mt-1 text-muted-foreground">{lastEval.feedback}</p>
-              </div>
-            )}
-
-            {/* Answer Input */}
-            <div className="mt-6">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                Your Response
-              </label>
-              <textarea
-                value={answerText}
-                disabled={submitting}
-                onChange={e => setAnswerText(e.target.value)}
-                placeholder="Type your answer clearly and structure your points (max 8,000 characters)..."
-                rows={7}
-                className="w-full rounded-lg border border-input bg-background p-3.5 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-              />
-              <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                <span>{answerText.length} / 8000 chars</span>
-                <span>Press Submit when finished</span>
-              </div>
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground">
+              {speaking ? (
+                <span className="inline-flex items-center gap-1 text-emerald-500 animate-pulse">
+                  <Volume2 className="size-3" /> Speaking question...
+                </span>
+              ) : listening ? (
+                <span className="inline-flex items-center gap-1 text-rose-500 animate-pulse">
+                  <Mic className="size-3" /> Listening for response...
+                </span>
+              ) : submitting ? (
+                <span className="inline-flex items-center gap-1 text-amber-500 animate-pulse">
+                  <Loader2 className="size-3 animate-spin" /> Evaluating answer...
+                </span>
+              ) : (
+                <span className="text-muted-foreground">Interviewer ready</span>
+              )}
             </div>
           </div>
 
-          {/* Submit Action */}
-          <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
-            <span className="text-xs text-muted-foreground">
-              {qNum === totalQ ? 'Final Question' : `Next: Question ${qNum + 1}`}
-            </span>
-
-            <button
-              onClick={handleSubmitAnswer}
-              disabled={!answerText.trim() || submitting}
-              className={button}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" /> Evaluating answer…
-                </>
-              ) : (
-                <>
-                  <Send className="size-4" />
-                  {qNum === totalQ ? 'Submit & Complete' : 'Submit Answer'}
-                </>
+          {/* Animated AI Avatar Head Visual */}
+          <div className="my-8 flex flex-col items-center justify-center">
+            <div className="relative grid size-32 place-items-center rounded-full bg-gradient-to-tr from-primary/20 via-primary/40 to-primary text-primary-foreground shadow-xl ring-8 ring-primary/10">
+              {speaking && (
+                <div className="absolute inset-0 rounded-full bg-primary/30 animate-ping" />
               )}
-            </button>
+              <Bot className="size-16 text-primary-foreground drop-shadow-md" />
+            </div>
+
+            {/* Audio Wave Indicators */}
+            <div className="mt-4 flex items-center gap-1.5 h-6">
+              {[12, 24, 16, 28, 20, 32, 18, 26, 14].map((h, i) => (
+                <span
+                  key={i}
+                  className={`w-1 rounded-full bg-primary transition-all duration-150 ${
+                    speaking || listening ? 'animate-pulse' : 'opacity-30'
+                  }`}
+                  style={{ height: speaking || listening ? `${h}px` : '6px' }}
+                />
+              ))}
+            </div>
+
+            <p className="mt-3 text-sm font-semibold text-foreground">Technical Placement Interviewer</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Assessing {session?.targetRole || 'Software Engineer'}</p>
+          </div>
+
+          <div className="w-full rounded-lg bg-muted p-3 text-center text-xs text-muted-foreground">
+            {speaking ? '🔊 Audio output active' : 'Click "Read text instead" to toggle mute'}
           </div>
         </section>
 
-        {/* Sidebar Transcript & History */}
-        <section className={`${card} flex flex-col p-5`}>
-          <div className="flex items-center justify-between border-b border-border pb-3">
-            <h2 className="font-semibold text-sm">Session Transcript</h2>
-            <span className="text-xs text-muted-foreground">{pastQA.length} Answered</span>
+        {/* Right: Question Text & Student Audio/Text Response Box */}
+        <section className={`${card} flex flex-col justify-between p-6`}>
+          <div>
+            {/* Question Display */}
+            <div className="border-b border-border pb-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-primary">Question {qNum}</span>
+                <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                  Difficulty: {currentQuestion?.difficulty || session?.difficulty}
+                </span>
+              </div>
+              <h2 className="mt-2 text-base font-semibold leading-relaxed text-foreground">
+                {currentQuestion?.questionText || 'Loading question...'}
+              </h2>
+            </div>
+
+            {/* Previous Question Feedback */}
+            {lastEval && (
+              <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs leading-relaxed">
+                <div className="font-semibold text-emerald-600 dark:text-emerald-400">
+                  Last Answer Feedback (Score: {lastEval.overallScore}/10)
+                </div>
+                <p className="text-muted-foreground mt-1">{lastEval.feedback}</p>
+              </div>
+            )}
+
+            {/* Student Answer Controls */}
+            <div className="mt-5">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Your Answer
+                </label>
+                <button
+                  onClick={toggleListening}
+                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                    listening
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : 'bg-primary/10 text-primary hover:bg-primary/20'
+                  }`}
+                >
+                  <Mic className="size-3.5" />
+                  {listening ? 'Stop Speaking' : 'Speak Answer'}
+                </button>
+              </div>
+
+              <textarea
+                value={answerText}
+                onChange={(e) => setAnswerText(e.target.value)}
+                disabled={submitting}
+                placeholder={
+                  listening
+                    ? 'Listening to your voice... Speak your answer clearly into your microphone.'
+                    : 'Type your answer here or click "Speak Answer" to use microphone...'
+                }
+                rows={6}
+                className="w-full rounded-lg border border-input bg-background p-3 text-xs leading-relaxed outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+              />
+            </div>
           </div>
 
-          <div className="mt-4 flex flex-1 flex-col gap-4 overflow-auto max-h-[500px]">
-            {pastQA.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic text-center py-8">
-                Your answered questions and AI evaluations will appear here.
-              </p>
-            ) : (
-              pastQA.map((item) => (
-                <div key={item.id} className="flex flex-col gap-2 rounded-lg border border-border p-3 text-xs">
-                  <p className="font-semibold text-primary">Q{item.questionNumber}: {item.questionText}</p>
-                  <p className="text-muted-foreground bg-muted p-2 rounded leading-5">
-                    {item.answer?.answerText}
-                  </p>
-                  {item.answer?.evaluation && (
-                    <div className="flex items-center justify-between font-medium text-xs pt-1">
-                      <span className="text-primary">Score: {item.answer.evaluation.overallScore}/10</span>
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
+          <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-4">
+            <span className="text-[10px] text-muted-foreground">
+              {answerText.trim().length} characters typed
+            </span>
+            <button
+              onClick={handleSubmitAnswer}
+              disabled={!answerText.trim() || submitting}
+              className={`${button} text-xs py-2 px-4 disabled:opacity-50`}
+            >
+              {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+              {submitting ? 'Evaluating...' : 'Submit Answer'}
+            </button>
           </div>
         </section>
       </div>

@@ -117,14 +117,24 @@ export async function createInterviewSession(userId: string, opts: CreateSession
     }
   }
 
-  const defaultTitle = title || `${difficulty} ${interviewType} Interview`
+  // Fetch user targetRole if omitted
+  let activeRole = targetRole
+  if (!activeRole) {
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: { targetRole: true },
+    })
+    activeRole = user?.targetRole || 'Software Engineer'
+  }
+
+  const defaultTitle = title || `${difficulty} ${interviewType} Interview (${activeRole})`
 
   const session = await db.interviewSession.create({
     data: {
       userId,
       title: defaultTitle,
       interviewType,
-      targetRole: targetRole || null,
+      targetRole: activeRole,
       subjectId: subjectId || null,
       topicId: topicId || null,
       difficulty,

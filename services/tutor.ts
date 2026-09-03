@@ -234,10 +234,29 @@ export async function sendTutorMessage(
     }
   }
 
-  // 3. Build system prompt with subject/topic context
+  // 3. Load user's targetRole & resume context
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { targetRole: true },
+  })
+
+  const targetRoleSlug = user?.targetRole || 'software-engineer'
+  
+  // Extract optional mode directive if passed in content prefix e.g. "[MODE:PRACTICE]"
+  let tutorMode: 'LEARN' | 'PRACTICE' | 'HINT' | 'EXPLAIN_MISTAKE' | 'INTERVIEW_PREP' | 'REVISION' | 'ROLE_READINESS' = 'LEARN'
+  if (content.startsWith('[MODE:')) {
+    const match = content.match(/^\[MODE:([A_Z_]+)\]/)
+    if (match && match[1]) {
+      tutorMode = match[1] as any
+    }
+  }
+
+  // Build role-aware system prompt
   const systemPrompt = buildTutorSystemPrompt({
     subjectName: session.subject?.name,
     topicName: session.topic?.name,
+    targetRole: targetRoleSlug,
+    tutorMode,
   })
 
   // 4. Load bounded conversation history
