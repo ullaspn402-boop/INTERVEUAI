@@ -74,7 +74,7 @@ export async function GET() {
   }
 }
 
-export async function PATCH(request: any) {
+export async function PATCH(request: Request) {
   try {
     const session = await getSession()
     if (!session) {

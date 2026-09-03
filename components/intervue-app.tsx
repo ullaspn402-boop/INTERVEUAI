@@ -1220,6 +1220,7 @@ function Coding() {
   const [submitting, setSubmitting] = useState(false)
   const [submitNotice, setSubmitNotice] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [lastStatus, setLastStatus] = useState<'ACCEPTED' | 'WRONG_ANSWER' | 'COMPILE_ERROR' | null>(null)
   const [activeTab, setActiveTab] = useState<'editor' | 'history'>('editor')
 
   // Fetch coding problem list on mount
@@ -1247,6 +1248,11 @@ function Coding() {
   // Fetch problem details & submission history when selectedProblemId changes
   useEffect(() => {
     if (!selectedProblemId) return
+
+    // Reset submission state when switching problems
+    setSubmitNotice(null)
+    setSubmitError(null)
+    setLastStatus(null)
 
     async function loadProblemDetail() {
       try {
@@ -1324,16 +1330,22 @@ function Coding() {
       const failed = sub.failedTestCase
 
       if (status === 'ACCEPTED') {
-        setSubmitNotice(`Accepted — All ${passed}/${total} test cases passed!`)
+        setLastStatus('ACCEPTED')
+        setSubmitNotice(`✓ Accepted — All ${passed}/${total} test cases passed!`)
       } else if (status === 'WRONG_ANSWER') {
-        let msg = `Wrong Answer — ${passed} / ${total} test cases passed.`
+        setLastStatus('WRONG_ANSWER')
+        let msg = `✗ Wrong Answer — ${passed} / ${total} test cases passed.`
         if (failed && !failed.isHidden) {
-          msg += ` Failed Test (Input: ${failed.input} | Expected: ${failed.expected} | Received: ${failed.received})`
+          msg += ` | Failed: Input: ${failed.input} | Expected: ${failed.expected} | Received: ${failed.received}`
+        } else if (failed && failed.isHidden) {
+          msg += ` | Hidden test case failed.`
         }
         setSubmitError(msg)
       } else if (status === 'COMPILE_ERROR') {
-        setSubmitError(`Compilation Error — ${sub.errorMessage || 'Syntax error in solution.'}`)
+        setLastStatus('COMPILE_ERROR')
+        setSubmitError(`⚠ Compilation Error — ${sub.errorMessage || 'Syntax error in solution.'}`)
       } else {
+        setLastStatus(null)
         setSubmitNotice(`Status: ${status} (${passed}/${total} tests passed)`)
       }
 
@@ -1652,8 +1664,8 @@ function Coding() {
 
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-background/10 p-3 bg-background/5">
                   <div className="flex items-center gap-2 text-xs text-background/60">
-                    <span className="inline-block size-2 rounded-full bg-amber-400"></span>
-                    <span>Persisted Submission Engine · Status: PENDING</span>
+                    <span className={`inline-block size-2 rounded-full ${lastStatus === 'ACCEPTED' ? 'bg-emerald-400' : lastStatus === 'WRONG_ANSWER' ? 'bg-rose-400' : lastStatus === 'COMPILE_ERROR' ? 'bg-amber-400' : 'bg-background/30'}`}></span>
+                    <span>Safe Validation Engine · {lastStatus ? lastStatus.replace('_', ' ') : 'Not submitted'}</span>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -1740,7 +1752,7 @@ function Interview() {
   const [type, setType] = useState<string>('TECHNICAL')
   const [difficulty, setDifficulty] = useState<string>('MEDIUM')
   const [questionCount, setQuestionCount] = useState<number>(5)
-  const [targetRole, setTargetRole] = useState<string>('Software Engineer')
+  const [targetRole, setTargetRole] = useState<string>('')
   const [subjectId, setSubjectId] = useState<string>('')
   const [title, setTitle] = useState<string>('')
 
@@ -1753,12 +1765,21 @@ function Interview() {
   const [starting, setStarting] = useState(false)
   const [setupError, setSetupError] = useState<string | null>(null)
 
-  // Load subjects and interview history on mount
+  // Load subjects, user profile (for targetRole), and interview history on mount
   useEffect(() => {
     fetch('/api/subjects')
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.subjects) setAvailableSubjects(d.subjects) })
       .catch(() => {})
+
+    // Pre-fill targetRole from user's actual profile selection
+    fetch('/api/auth/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        const role = d?.user?.targetRole
+        setTargetRole(role || 'Software Engineer')
+      })
+      .catch(() => { setTargetRole('Software Engineer') })
 
     fetch('/api/interviews?limit=10')
       .then(r => r.ok ? r.json() : null)

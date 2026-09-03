@@ -245,7 +245,7 @@ export async function sendTutorMessage(
   // Extract optional mode directive if passed in content prefix e.g. "[MODE:PRACTICE]"
   let tutorMode: 'LEARN' | 'PRACTICE' | 'HINT' | 'EXPLAIN_MISTAKE' | 'INTERVIEW_PREP' | 'REVISION' | 'ROLE_READINESS' = 'LEARN'
   if (content.startsWith('[MODE:')) {
-    const match = content.match(/^\[MODE:([A_Z_]+)\]/)
+    const match = content.match(/^\[MODE:([A-Z_]+)\]/)
     if (match && match[1]) {
       tutorMode = match[1] as any
     }
