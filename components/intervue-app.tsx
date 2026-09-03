@@ -2081,6 +2081,308 @@ function Interview() {
   )
 }
 
+function TalkingInterviewerAvatar({
+  speaking,
+  listening,
+  evaluating,
+  targetRole,
+}: {
+  speaking: boolean
+  listening: boolean
+  evaluating: boolean
+  targetRole?: string
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const animFrameRef = useRef<number | null>(null)
+
+  // Animation parameters
+  const stateRef = useRef({
+    mouthOpen: 0,
+    targetMouthOpen: 0,
+    headTilt: 0,
+    blinkProgress: 0,
+    isBlinking: false,
+    nextBlinkTime: Date.now() + 3000,
+    breathCycle: 0,
+    nodCycle: 0,
+  })
+
+  // Syllable pulse trigger when TTS speech boundary fires
+  useEffect(() => {
+    if (speaking) {
+      const interval = setInterval(() => {
+        stateRef.current.targetMouthOpen = Math.random() * 0.8 + 0.2
+        stateRef.current.headTilt = (Math.random() - 0.5) * 0.08
+      }, 120)
+      return () => clearInterval(interval)
+    } else {
+      stateRef.current.targetMouthOpen = 0
+      stateRef.current.headTilt = 0
+    }
+  }, [speaking])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    let lastTime = performance.now()
+
+    const render = (now: number) => {
+      const dt = Math.min((now - lastTime) / 1000, 0.1)
+      lastTime = now
+
+      const s = stateRef.current
+
+      // Smooth mouth open interpolation
+      s.mouthOpen += (s.targetMouthOpen - s.mouthOpen) * 20 * dt
+
+      // Natural blink timer logic
+      if (now > s.nextBlinkTime && !s.isBlinking) {
+        s.isBlinking = true
+        s.blinkProgress = 0
+        s.nextBlinkTime = now + Math.random() * 3500 + 2500
+      }
+
+      if (s.isBlinking) {
+        s.blinkProgress += dt * 10
+        if (s.blinkProgress >= 1) {
+          s.isBlinking = false
+          s.blinkProgress = 0
+        }
+      }
+
+      // Micro breathing & listening head nod cycles
+      s.breathCycle += dt * 1.8
+      s.nodCycle += dt * 2.5
+      const breathOffset = Math.sin(s.breathCycle) * 2
+      const nodOffset = listening ? Math.sin(s.nodCycle) * 3 : 0
+
+      // Canvas dimensions
+      const width = canvas.width
+      const height = canvas.height
+
+      // Clear & Background - Professional Office Scene
+      ctx.clearRect(0, 0, width, height)
+
+      // Background Wall Gradient (Warm Tech Office)
+      const bgGrad = ctx.createLinearGradient(0, 0, width, height)
+      bgGrad.addColorStop(0, '#18181b')
+      bgGrad.addColorStop(0.5, '#27272a')
+      bgGrad.addColorStop(1, '#09090b')
+      ctx.fillStyle = bgGrad
+      ctx.fillRect(0, 0, width, height)
+
+      // Ambient Office Window Light Effect
+      const windowGrad = ctx.createRadialGradient(width * 0.8, height * 0.2, 10, width * 0.8, height * 0.2, width * 0.6)
+      windowGrad.addColorStop(0, 'rgba(59, 130, 246, 0.18)')
+      windowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      ctx.fillStyle = windowGrad
+      ctx.fillRect(0, 0, width, height)
+
+      // Office Plant & Shelf Silhouette (Background Detail)
+      ctx.fillStyle = 'rgba(39, 39, 42, 0.6)'
+      ctx.fillRect(width * 0.05, height * 0.35, width * 0.15, height * 0.5)
+
+      // Center Head & Body Position
+      const centerX = width / 2
+      const centerY = height / 2 + breathOffset + nodOffset
+
+      ctx.save()
+      ctx.translate(centerX, centerY - 15)
+      ctx.rotate(s.headTilt)
+
+      // Torso & Shoulders (Professional Blazer)
+      ctx.fillStyle = '#1e1b4b' // Deep navy blazer
+      ctx.beginPath()
+      ctx.moveTo(-90, 140)
+      ctx.quadraticCurveTo(0, 95, 90, 140)
+      ctx.lineTo(130, height)
+      ctx.lineTo(-130, height)
+      ctx.closePath()
+      ctx.fill()
+
+      // Inner Shirt / Top
+      ctx.fillStyle = '#f8fafc' // Crisp white blouse/shirt
+      ctx.beginPath()
+      ctx.moveTo(-35, 110)
+      ctx.lineTo(0, 135)
+      ctx.lineTo(35, 110)
+      ctx.lineTo(20, 150)
+      ctx.lineTo(-20, 150)
+      ctx.closePath()
+      ctx.fill()
+
+      // Neck
+      ctx.fillStyle = '#e29d82' // Skin tone
+      ctx.fillRect(-20, 45, 40, 55)
+
+      // Neck Shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.15)'
+      ctx.fillRect(-20, 85, 40, 15)
+
+      // Head / Face Contour
+      ctx.fillStyle = '#f0a88e' // Skin tone face base
+      ctx.beginPath()
+      ctx.ellipse(0, 0, 52, 68, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Face Highlight / Shading
+      const faceHighlight = ctx.createLinearGradient(-40, -40, 40, 40)
+      faceHighlight.addColorStop(0, 'rgba(255, 255, 255, 0.15)')
+      faceHighlight.addColorStop(1, 'rgba(0, 0, 0, 0.1)')
+      ctx.fillStyle = faceHighlight
+      ctx.beginPath()
+      ctx.ellipse(0, 0, 52, 68, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Hair (Professional Styled Hair)
+      ctx.fillStyle = '#1c1917' // Dark espresso hair
+      ctx.beginPath()
+      ctx.ellipse(0, -25, 58, 54, 0, Math.PI, Math.PI * 2)
+      ctx.fill()
+
+      // Side hair locks framing face
+      ctx.beginPath()
+      ctx.ellipse(-52, 5, 12, 45, 0.2, 0, Math.PI * 2)
+      ctx.ellipse(52, 5, 12, 45, -0.2, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Eyebrows
+      ctx.strokeStyle = '#292524'
+      ctx.lineWidth = 3.5
+      ctx.lineCap = 'round'
+
+      const browLift = speaking ? -2 : evaluating ? -1 : 0
+      // Left eyebrow
+      ctx.beginPath()
+      ctx.moveTo(-32, -18 + browLift)
+      ctx.quadraticCurveTo(-20, -25 + browLift, -8, -19 + browLift)
+      ctx.stroke()
+
+      // Right eyebrow
+      ctx.beginPath()
+      ctx.moveTo(8, -19 + browLift)
+      ctx.quadraticCurveTo(20, -25 + browLift, 32, -18 + browLift)
+      ctx.stroke()
+
+      // Eyes & Blinking
+      const blinkYScale = s.isBlinking
+        ? Math.sin(s.blinkProgress * Math.PI)
+        : 0
+
+      ctx.fillStyle = '#ffffff' // Sclera (White)
+      // Left Eye
+      ctx.beginPath()
+      ctx.ellipse(-22, -4, 11, 7 * (1 - blinkYScale * 0.9), 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Right Eye
+      ctx.beginPath()
+      ctx.ellipse(22, -4, 11, 7 * (1 - blinkYScale * 0.9), 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      if (blinkYScale < 0.8) {
+        // Iris & Pupils
+        ctx.fillStyle = '#451a03' // Warm hazel brown iris
+        ctx.beginPath()
+        ctx.arc(-22, -4, 5, 0, Math.PI * 2)
+        ctx.arc(22, -4, 5, 0, Math.PI * 2)
+        ctx.fill()
+
+        ctx.fillStyle = '#000000' // Pupil
+        ctx.beginPath()
+        ctx.arc(-22, -4, 2.5, 0, Math.PI * 2)
+        ctx.arc(22, -4, 2.5, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Catchlight reflections (Life in the eyes)
+        ctx.fillStyle = '#ffffff'
+        ctx.beginPath()
+        ctx.arc(-20, -6, 1.2, 0, Math.PI * 2)
+        ctx.arc(24, -6, 1.2, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      // Nose
+      ctx.strokeStyle = '#d97706'
+      ctx.lineWidth = 1.8
+      ctx.beginPath()
+      ctx.moveTo(0, -6)
+      ctx.lineTo(2, 16)
+      ctx.lineTo(-4, 20)
+      ctx.stroke()
+
+      // ====================================================================
+      // DYNAMIC LIP-SYNC MOUTH ANIMATION ENGINE
+      // ====================================================================
+      const openHeight = Math.max(2, s.mouthOpen * 22)
+      const mouthWidth = 24 + s.mouthOpen * 5
+
+      // Lips Contour (Upper & Lower Lips)
+      ctx.fillStyle = '#be123c' // Professional Rose Lip color
+
+      if (s.mouthOpen > 0.08) {
+        // OPEN TALKING MOUTH WITH LIP-SYNC SHAPE & INNER CAVITY
+        ctx.fillStyle = '#4c0519'
+        ctx.beginPath()
+        ctx.ellipse(0, 34, mouthWidth / 2, openHeight / 2, 0, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Upper Teeth
+        ctx.fillStyle = '#f8fafc'
+        ctx.fillRect(-mouthWidth / 3, 34 - openHeight / 2, (mouthWidth * 2) / 3, Math.min(4, openHeight / 3))
+
+        // Upper Lip
+        ctx.fillStyle = '#be123c'
+        ctx.beginPath()
+        ctx.moveTo(-mouthWidth / 2 - 2, 34)
+        ctx.quadraticCurveTo(-mouthWidth / 4, 30 - openHeight / 4, 0, 31)
+        ctx.quadraticCurveTo(mouthWidth / 4, 30 - openHeight / 4, mouthWidth / 2 + 2, 34)
+        ctx.quadraticCurveTo(0, 33, -mouthWidth / 2 - 2, 34)
+        ctx.fill()
+
+        // Lower Lip
+        ctx.beginPath()
+        ctx.moveTo(-mouthWidth / 2 - 2, 34)
+        ctx.quadraticCurveTo(0, 36 + openHeight / 2, mouthWidth / 2 + 2, 34)
+        ctx.quadraticCurveTo(0, 34 + openHeight / 2 + 2, -mouthWidth / 2 - 2, 34)
+        ctx.fill()
+      } else {
+        // CLOSED / SMILE MOUTH (LISTENING OR IDLE)
+        ctx.strokeStyle = '#9f1239'
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.moveTo(-16, 34)
+        ctx.quadraticCurveTo(0, listening ? 38 : 36, 16, 34)
+        ctx.stroke()
+      }
+
+      ctx.restore()
+
+      animFrameRef.current = requestAnimationFrame(render)
+    }
+
+    animFrameRef.current = requestAnimationFrame(render)
+
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+    }
+  }, [speaking, listening, evaluating])
+
+  return (
+    <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-zinc-950 overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        width={560}
+        height={420}
+        className="w-full h-full object-cover rounded-2xl"
+      />
+    </div>
+  )
+}
+
 function LiveInterview({
   sessionId,
   onComplete,
@@ -2361,21 +2663,15 @@ function LiveInterview({
       <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-4 md:p-6 shadow-2xl relative flex flex-col gap-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
 
-          {/* LEFT PANEL: AI INTERVIEWER VIDEO PANEL */}
+          {/* LEFT PANEL: ANIMATED TALKING AI INTERVIEWER CHARACTER */}
           <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 flex flex-col justify-between p-4 shadow-xl group">
-            {/* Background realistic interviewer visual presentation */}
-            <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-900/60 to-zinc-900/20" />
-
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-              <div className="relative grid size-28 place-items-center rounded-full bg-gradient-to-tr from-primary/30 via-primary/60 to-primary text-primary-foreground shadow-2xl ring-8 ring-primary/15">
-                {speaking && (
-                  <div className="absolute inset-0 rounded-full bg-primary/40 animate-ping" />
-                )}
-                <Bot className="size-14 text-white drop-shadow-lg" />
-              </div>
-              <p className="mt-4 text-sm font-semibold text-white">Technical AI Interviewer</p>
-              <p className="text-[11px] text-zinc-400 mt-0.5">Assessing {session?.targetRole || 'Software Engineer'}</p>
-            </div>
+            {/* HTML5 Canvas Real-Time Lip-Sync & Face Motion Renderer */}
+            <TalkingInterviewerAvatar
+              speaking={speaking}
+              listening={listening}
+              evaluating={submitting}
+              targetRole={session?.targetRole || 'Software Engineer'}
+            />
 
             {/* Top Badges */}
             <div className="relative z-10 flex items-center justify-between w-full">
