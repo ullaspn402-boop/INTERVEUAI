@@ -1,0 +1,586 @@
+// This is your Prisma schema file.
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum SubjectCategory {
+  CORE_TECHNICAL
+  ADDITIONAL
+}
+
+enum TopicProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ActivityType {
+  SUBJECT_STARTED
+  TOPIC_COMPLETED
+  QUIZ_COMPLETED
+  CODING_COMPLETED
+  CODING_SUBMITTED
+  INTERVIEW_COMPLETED
+  TUTOR_SESSION
+}
+
+enum CodingSubmissionStatus {
+  PENDING
+  ACCEPTED
+  WRONG_ANSWER
+  RUNTIME_ERROR
+  TIME_LIMIT_EXCEEDED
+  COMPILE_ERROR
+  ERROR
+}
+
+enum QuizDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum TutorSessionStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum TutorMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum InterviewType {
+  GENERAL
+  TECHNICAL
+  BEHAVIORAL
+  MIXED
+}
+
+enum InterviewQuestionType {
+  TECHNICAL
+  BEHAVIORAL
+  SITUATIONAL
+  FOLLOW_UP
+}
+
+enum InterviewSessionStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+// ============================================================
+// USER & AUTHENTICATION
+// ============================================================
+
+model User {
+  id              String   @id @default(cuid())
+  name            String
+  email           String   @unique
+  passwordHash    String?  // Optional for Google-authenticated accounts
+  googleId        String?  @unique
+  avatarUrl       String?
+  referralCode    String?  @unique
+  referredById    String?
+  college         String?
+  degree          String?
+  graduationYear  Int?
+  targetRole      String?
+  targetCompanies String?
+  emailVerifiedAt DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  preference              UserPreference?
+  userProgresses          UserProgress[]
+  topicProgresses         TopicProgress[]
+  activities              Activity[]
+  quizAttempts            QuizAttempt[]
+  codingSubmissions       CodingSubmission[]
+  tutorSessions           TutorSession[]
+  interviewSessions       InterviewSession[]
+  interviewAnswers        InterviewAnswer[]
+  referralCodeOwner       Referral?          @relation("ReferredUser")
+  referralsMade           Referral[]          @relation("ReferrerUser")
+  shareableResults        ShareableResult[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+
+  @@index([email])
+  @@index([googleId])
+  @@index([referralCode])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model UserPreference {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weeklyGoalSessions Int      @default(5)
+  difficulty         String   @default("medium")
+  updatedAt          DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Referral {
+  id         String   @id @default(cuid())
+  referrerId String
+  referrer   User     @relation("ReferrerUser", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredId String   @unique
+  referred   User     @relation("ReferredUser", fields: [referredId], references: [id], onDelete: Cascade)
+  code       String
+  status     String   @default("COMPLETED")
+  createdAt  DateTime @default(now())
+
+  @@index([referrerId])
+  @@index([referredId])
+}
+
+model ShareableResult {
+  id        String   @id @default(cuid())
+  publicId  String   @unique @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // 'READINESS' | 'INTERVIEW' | 'QUIZ'
+  title     String
+  summary   String
+  metrics   Json
+  createdAt DateTime @default(now())
+
+  @@index([publicId])
+  @@index([userId])
+}
+
+// ============================================================
+// PLACEMENT CURRICULUM: SUBJECTS & TOPICS
+// ============================================================
+
+model Subject {
+  id           String          @id @default(cuid())
+  name         String
+  slug         String          @unique
+  shortTitle   String
+  description  String
+  category     SubjectCategory @default(CORE_TECHNICAL)
+  displayOrder Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  topics             Topic[]
+  userProgresses     UserProgress[]
+  quizzes            Quiz[]
+  codingProblems     CodingProblem[]
+  tutorSessions      TutorSession[]
+  interviewSessions  InterviewSession[]
+  interviewQuestions InterviewQuestion[]
+
+  @@index([slug])
+}
+
+model Topic {
+  id           String   @id @default(cuid())
+  subjectId    String
+  subject      Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  name         String
+  slug         String
+  description  String?
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  topicProgresses    TopicProgress[]
+  questions          Question[]
+  codingProblems     CodingProblem[]
+  tutorSessions      TutorSession[]
+  interviewSessions  InterviewSession[]
+  interviewQuestions InterviewQuestion[]
+
+  @@unique([subjectId, slug])
+  @@index([subjectId])
+  @@index([slug])
+}
+
+// ============================================================
+// USER PROGRESS & ACTIVITY LOGGING
+// ============================================================
+
+model UserProgress {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId       String
+  subject         Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  progress        Float    @default(0)
+  completedTopics Int      @default(0)
+  totalTopics     Int      @default(0)
+  lastActivityAt  DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, subjectId])
+  @@index([userId])
+}
+
+model TopicProgress {
+  id          String              @id @default(cuid())
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topicId     String
+  topic       Topic               @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  status      TopicProgressStatus @default(NOT_STARTED)
+  progress    Float               @default(0)
+  completedAt DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([userId, topicId])
+  @@index([userId])
+  @@index([topicId])
+}
+
+model Activity {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        ActivityType
+  title       String
+  description String?
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  @@index([userId])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+// ============================================================
+// QUIZZES, QUESTIONS & ATTEMPTS
+// ============================================================
+
+model Quiz {
+  id              String         @id @default(cuid())
+  title           String
+  slug            String         @unique
+  description     String
+  subjectId       String
+  subject         Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  difficulty      QuizDifficulty @default(EASY)
+  questionCount   Int            @default(0)
+  durationMinutes Int            @default(10)
+  isPublished     Boolean        @default(true)
+  displayOrder    Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  questions    Question[]
+  quizAttempts QuizAttempt[]
+
+  @@index([subjectId])
+  @@index([isPublished])
+  @@index([slug])
+}
+
+model Question {
+  id           String         @id @default(cuid())
+  quizId       String
+  quiz         Quiz           @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  topicId      String?
+  topic        Topic?         @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  questionText String
+  explanation  String
+  difficulty   QuizDifficulty @default(EASY)
+  displayOrder Int            @default(0)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  options        QuestionOption[]
+  attemptAnswers QuizAttemptAnswer[]
+
+  @@index([quizId])
+  @@index([topicId])
+}
+
+model QuestionOption {
+  id           String   @id @default(cuid())
+  questionId   String
+  question     Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  optionText   String
+  optionKey    String
+  isCorrect    Boolean  @default(false)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  attemptAnswers QuizAttemptAnswer[]
+
+  @@index([questionId])
+}
+
+model QuizAttempt {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quizId         String
+  quiz           Quiz      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  score          Float     @default(0)
+  totalQuestions Int       @default(0)
+  correctAnswers Int       @default(0)
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  answers QuizAttemptAnswer[]
+
+  @@index([userId])
+  @@index([quizId])
+  @@index([createdAt])
+}
+
+model QuizAttemptAnswer {
+  id               String         @id @default(cuid())
+  attemptId        String
+  attempt          QuizAttempt    @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId       String
+  question         Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOptionId String
+  selectedOption   QuestionOption @relation(fields: [selectedOptionId], references: [id], onDelete: Cascade)
+  isCorrect        Boolean
+  createdAt        DateTime       @default(now())
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@index([questionId])
+  @@index([selectedOptionId])
+}
+
+// ============================================================
+// CODING PROBLEMS & SUBMISSIONS
+// ============================================================
+
+model CodingProblem {
+  id           String         @id @default(cuid())
+  title        String
+  slug         String         @unique
+  description  String
+  difficulty   QuizDifficulty @default(EASY)
+  subjectId    String
+  subject      Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topicId      String?
+  topic        Topic?         @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  constraints  String
+  inputFormat  String
+  outputFormat String
+  examples     Json
+  starterCode  Json
+  tags         Json
+  isPublished  Boolean        @default(true)
+  displayOrder Int            @default(0)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  submissions CodingSubmission[]
+
+  @@index([subjectId])
+  @@index([topicId])
+  @@index([difficulty])
+  @@index([isPublished])
+  @@index([createdAt])
+  @@index([slug])
+}
+
+model CodingSubmission {
+  id              String                 @id @default(cuid())
+  userId          String
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId       String
+  problem         CodingProblem          @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  language        String
+  sourceCode      String
+  status          CodingSubmissionStatus @default(PENDING)
+  score           Float?
+  executionTimeMs Int?
+  memoryUsedKb    Int?
+  testCasesPassed Int?
+  testCasesTotal  Int?
+  errorMessage    String?
+  submittedAt     DateTime               @default(now())
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([userId])
+  @@index([problemId])
+  @@index([submittedAt])
+  @@index([status])
+}
+
+// ============================================================
+// AI TUTOR SESSIONS & MESSAGES
+// ============================================================
+
+model TutorSession {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId String?
+  subject   Subject?           @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  topicId   String?
+  topic     Topic?             @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  title     String?
+  status    TutorSessionStatus @default(ACTIVE)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  messages TutorMessage[]
+
+  @@index([userId])
+  @@index([subjectId])
+  @@index([topicId])
+  @@index([createdAt])
+  @@index([status])
+}
+
+model TutorMessage {
+  id        String           @id @default(cuid())
+  sessionId String
+  session   TutorSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      TutorMessageRole
+  content   String
+  createdAt DateTime         @default(now())
+
+  @@index([sessionId])
+  @@index([sessionId, createdAt(sort: Asc)])
+}
+
+// ============================================================
+// AI INTERVIEW ENGINE (SESSIONS, QUESTIONS, ANSWERS, EVALUATIONS)
+// ============================================================
+
+model InterviewSession {
+  id                    String                 @id @default(cuid())
+  userId                String
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                 String?
+  interviewType         InterviewType          @default(TECHNICAL)
+  targetRole            String?
+  subjectId             String?
+  subject               Subject?               @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  topicId               String?
+  topic                 Topic?                 @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  difficulty            QuizDifficulty         @default(MEDIUM)
+  questionCount         Int                    @default(5)
+  currentQuestionNumber Int                    @default(1)
+  status                InterviewSessionStatus @default(ACTIVE)
+  overallScore          Float?
+  overallFeedback       String?
+  startedAt             DateTime               @default(now())
+  completedAt           DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  questions InterviewQuestion[]
+  answers   InterviewAnswer[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([subjectId])
+  @@index([topicId])
+  @@index([interviewType])
+}
+
+model InterviewQuestion {
+  id             String                @id @default(cuid())
+  sessionId      String
+  session        InterviewSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questionNumber Int
+  questionText   String
+  questionType   InterviewQuestionType @default(TECHNICAL)
+  subjectId      String?
+  subject        Subject?              @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  topicId        String?
+  topic          Topic?                @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  difficulty     QuizDifficulty        @default(MEDIUM)
+  createdAt      DateTime              @default(now())
+
+  answer InterviewAnswer?
+
+  @@unique([sessionId, questionNumber])
+  @@index([sessionId])
+  @@index([subjectId])
+  @@index([topicId])
+}
+
+model InterviewAnswer {
+  id          String            @id @default(cuid())
+  questionId  String            @unique
+  question    InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  sessionId   String
+  session     InterviewSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answerText  String
+  submittedAt DateTime          @default(now())
+  createdAt   DateTime          @default(now())
+
+  evaluation InterviewEvaluation?
+
+  @@index([questionId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([submittedAt])
+}
+
+model InterviewEvaluation {
+  id               String          @id @default(cuid())
+  answerId         String          @unique
+  answer           InterviewAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  relevanceScore   Float
+  correctnessScore Float
+  clarityScore     Float
+  depthScore       Float
+  overallScore     Float
+  feedback         String
+  strengths        Json?
+  improvements     Json?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
