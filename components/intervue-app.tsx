@@ -13,6 +13,7 @@ import {
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: Home },
   { href: '/preparation', label: 'Preparation', icon: BookOpen },
+  { href: '/role-prep', label: 'Role Prep', icon: Target },
   { href: '/tutor', label: 'AI Tutor', icon: MessageSquareText },
   { href: '/quizzes', label: 'Quizzes', icon: BrainCircuit },
   { href: '/coding', label: 'Coding', icon: Code2 },
@@ -2863,6 +2864,596 @@ function Profile() {
   )
 }
 
+function RolePreparationView() {
+  const router = useRouter()
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'plan' | 'preparation' | 'learning' | 'ready'>('plan')
+  
+  // Role selector modal state
+  const [roleModalOpen, setRoleModalOpen] = useState(false)
+  const [allRoles, setAllRoles] = useState<any[]>([])
+  const [roleSearch, setRoleSearch] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('ALL')
+  const [updatingRole, setUpdatingRole] = useState(false)
+
+  // Resume upload & analysis state
+  const [resumeFile, setResumeFile] = useState<File | null>(null)
+  const [uploadingResume, setUploadingResume] = useState(false)
+  const [analyzingResume, setAnalyzingResume] = useState(false)
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null)
+  const [resumeError, setResumeError] = useState<string | null>(null)
+
+  const fetchData = async () => {
+    try {
+      setLoading(true)
+      const res = await fetch('/api/role-preparation')
+      if (res.ok) {
+        const json = await res.json()
+        setData(json)
+      }
+    } catch (err) {
+      console.error('Failed to load role preparation profile:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchRoles = async () => {
+    try {
+      const res = await fetch('/api/roles')
+      if (res.ok) {
+        const json = await res.json()
+        setAllRoles(json.roles || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch roles:', err)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+    fetchRoles()
+  }, [])
+
+  async function handleSelectRole(roleSlug: string) {
+    setUpdatingRole(true)
+    try {
+      const res = await fetch('/api/user/target-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roleSlug }),
+      })
+      if (res.ok) {
+        setRoleModalOpen(false)
+        await fetchData()
+      }
+    } catch (err) {
+      console.error('Failed to update target role:', err)
+    } finally {
+      setUpdatingRole(false)
+    }
+  }
+
+  async function handleResumeUpload(e: React.FormEvent) {
+    e.preventDefault()
+    if (!resumeFile) return
+
+    setUploadingResume(true)
+    setResumeNotice(null)
+    setResumeError(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', resumeFile)
+
+      const res = await fetch('/api/resume/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const json = await res.json()
+      if (!res.ok) {
+        setResumeError(json.error || 'Failed to upload resume')
+        return
+      }
+
+      setResumeNotice(`Resume "${resumeFile.name}" uploaded successfully! Analyzing skills against target role...`)
+      setResumeFile(null)
+
+      // Auto-trigger analysis
+      setAnalyzingResume(true)
+      const analyzeRes = await fetch('/api/resume/analyze', { method: 'POST' })
+      if (analyzeRes.ok) {
+        setResumeNotice(`Resume skills analyzed successfully! Gap analysis updated.`)
+        await fetchData()
+      }
+    } catch (err: any) {
+      setResumeError(err.message || 'Error processing resume')
+    } finally {
+      setUploadingResume(false)
+      setAnalyzingResume(false)
+    }
+  }
+
+  async function handleDeleteResume() {
+    try {
+      const res = await fetch('/api/resume', { method: 'DELETE' })
+      if (res.ok) {
+        setResumeNotice('Resume removed from account.')
+        await fetchData()
+      }
+    } catch (err) {
+      console.error('Failed to delete resume:', err)
+    }
+  }
+
+  const filteredRoles = useMemo(() => {
+    return allRoles.filter((r) => {
+      const matchesSearch = r.name.toLowerCase().includes(roleSearch.toLowerCase()) || r.description.toLowerCase().includes(roleSearch.toLowerCase())
+      const matchesCat = selectedCategory === 'ALL' || r.category === selectedCategory
+      return matchesSearch && matchesCat
+    })
+  }, [allRoles, roleSearch, selectedCategory])
+
+  const categories = Array.from(new Set(allRoles.map((r) => r.category)))
+
+  if (loading) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-3 text-muted-foreground">
+        <Loader2 className="size-8 animate-spin text-primary" />
+        <p className="text-sm">Calculating role readiness and gap analysis profile...</p>
+      </div>
+    )
+  }
+
+  const role = data?.role
+  const readiness = data?.readiness
+  const gap = readiness?.gapAnalysis
+  const modes = data?.modes
+  const resume = data?.resume
+
+  return (
+    <div className="flex flex-col gap-7">
+      <PageHeading
+        eyebrow="Target Role & Readiness"
+        title="Role-Based Placement Preparation"
+        description="Personalized around your target career role using the Three-Source Skill Model (Resume + Progress + Assessment Performance)."
+        action="Change Target Role"
+        onAction={() => setRoleModalOpen(true)}
+      />
+
+      {/* Target Role & Readiness Banner */}
+      <section className={`${card} p-6 border-l-4 border-l-primary bg-gradient-to-r from-primary/5 via-card to-card`}>
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary uppercase tracking-wider">
+                {role?.category || 'Engineering'}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Target Role: <strong className="text-foreground text-sm">{role?.name || 'Software Engineer'}</strong>
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground leading-relaxed max-w-2xl">
+              {role?.description || 'Core engineering placement track focused on CS fundamentals, coding, and technical interview excellence.'}
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-4 shrink-0 border-t border-border pt-4 lg:border-0 lg:pt-0">
+            <div className="text-center sm:text-right">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Role Readiness</p>
+              {readiness?.isSufficientData ? (
+                <p className="text-4xl font-semibold text-primary mt-1">{readiness.readinessScore}%</p>
+              ) : (
+                <div className="mt-1 inline-flex items-center gap-1 rounded bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  <AlertCircle className="size-3.5" /> Insufficient Data
+                </div>
+              )}
+            </div>
+            <button onClick={() => setRoleModalOpen(true)} className={outlineButton}>
+              <Target className="size-4" /> Change Role
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Optional Resume Analyzer Card */}
+      <section className={`${card} p-6`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
+          <div>
+            <h2 className="font-semibold text-base flex items-center gap-2">
+              <Sparkles className="size-4 text-primary" /> Personalize with Optional Resume
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Optional. Uploading a resume helps us verify what skills you already have. You are never required to upload a resume.
+            </p>
+          </div>
+          {resume && (
+            <button onClick={handleDeleteResume} className="text-xs font-semibold text-destructive hover:underline shrink-0">
+              Remove Resume
+            </button>
+          )}
+        </div>
+
+        {resumeNotice && (
+          <div className="mt-4 flex items-center gap-2 rounded-lg bg-emerald-500/10 p-3 text-xs text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="size-4 shrink-0" />
+            <span>{resumeNotice}</span>
+          </div>
+        )}
+        {resumeError && (
+          <div className="mt-4 flex items-center gap-2 rounded-lg bg-rose-500/10 p-3 text-xs text-rose-600 dark:text-rose-400">
+            <AlertCircle className="size-4 shrink-0" />
+            <span>{resumeError}</span>
+          </div>
+        )}
+
+        {resume ? (
+          <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4 rounded-lg bg-muted p-4 text-xs">
+            <div>
+              <p className="font-semibold text-foreground">{resume.fileName} ({(resume.fileSize / 1024).toFixed(1)} KB)</p>
+              <p className="text-muted-foreground mt-0.5">Uploaded {new Date(resume.uploadedAt).toLocaleDateString()} · Extracted {resume.rawSkills?.length || 0} skill keywords</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={async () => {
+                  setAnalyzingResume(true)
+                  try {
+                    await fetch('/api/resume/analyze', { method: 'POST' })
+                    setResumeNotice('Re-analyzed resume skills against current target role.')
+                    await fetchData()
+                  } finally {
+                    setAnalyzingResume(false)
+                  }
+                }}
+                disabled={analyzingResume}
+                className={outlineButton}
+              >
+                {analyzingResume ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}
+                {analyzingResume ? 'Analyzing...' : 'Re-analyze Resume'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleResumeUpload} className="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <input
+              type="file"
+              accept=".pdf,.docx,.txt,.md"
+              onChange={(e) => setResumeFile(e.target.files?.[0] || null)}
+              className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-xs file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20"
+            />
+            <button
+              type="submit"
+              disabled={!resumeFile || uploadingResume}
+              className={`${button} shrink-0 text-xs py-2`}
+            >
+              {uploadingResume ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+              {uploadingResume ? 'Uploading...' : 'Upload & Analyze Resume'}
+            </button>
+          </form>
+        )}
+      </section>
+
+      {/* 4 Main Preparation Mode Tabs */}
+      <div className="border-b border-border">
+        <nav className="flex gap-6 overflow-x-auto" aria-label="Preparation Modes">
+          {[
+            ['plan', 'PLAN', 'What should I do next?'],
+            ['preparation', 'PREPARATION', 'What should I practice?'],
+            ['learning', 'LEARNING', 'What do I need to learn?'],
+            ['ready', 'READY', 'Am I ready for this role?'],
+          ].map(([key, label, desc]) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key as any)}
+              className={`flex flex-col py-3 border-b-2 font-medium text-xs transition shrink-0 ${
+                activeTab === key
+                  ? 'border-primary text-primary font-semibold'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <span className="text-sm font-semibold">{label}</span>
+              <span className="text-[10px] opacity-75">{desc}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Mode Content */}
+      {activeTab === 'plan' && (
+        <section className={`${card} p-6`}>
+          <h2 className="font-semibold text-base mb-2">Priority Recommended Next Steps</h2>
+          <p className="text-xs text-muted-foreground mb-5">Sequenced automatically based on your missing role requirements, weak topics, and verified skills.</p>
+          <div className="flex flex-col gap-3">
+            {modes?.plan?.priorities?.length > 0 ? (
+              modes.plan.priorities.map((item: any, idx: number) => (
+                <div key={idx} className="flex items-start justify-between rounded-lg border border-border p-4 text-xs hover:bg-accent/50 transition">
+                  <div className="flex items-start gap-3">
+                    <span className="grid size-6 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary shrink-0 mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <div>
+                      <p className="font-semibold text-sm text-foreground">{item.title}</p>
+                      <p className="text-muted-foreground mt-1 leading-relaxed">{item.description}</p>
+                    </div>
+                  </div>
+                  <Link href={item.actionHref} className="text-xs font-semibold text-primary hover:underline shrink-0 ml-2">
+                    {item.actionText} →
+                  </Link>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-muted-foreground py-6 text-center">No active priority gaps. Complete quizzes and coding challenges to update your plan.</p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'preparation' && (
+        <div className="grid gap-5 sm:grid-cols-3">
+          <section className={`${card} p-5 flex flex-col justify-between`}>
+            <div>
+              <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">Quizzes</span>
+              <h3 className="font-semibold text-base mt-2">Targeted Quizzes</h3>
+              <p className="text-xs text-muted-foreground mt-1">Test your core knowledge on topics required for {role?.name}.</p>
+            </div>
+            <Link href="/quizzes" className={`${button} mt-5 w-full text-xs`}>
+              Start Role Quizzes <ArrowRight className="size-3.5" />
+            </Link>
+          </section>
+
+          <section className={`${card} p-5 flex flex-col justify-between`}>
+            <div>
+              <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">Coding</span>
+              <h3 className="font-semibold text-base mt-2">Hands-on Problems</h3>
+              <p className="text-xs text-muted-foreground mt-1">Solve algorithmic and database challenges relevant to {role?.name}.</p>
+            </div>
+            <Link href="/coding" className={`${button} mt-5 w-full text-xs`}>
+              Practice Coding <ArrowRight className="size-3.5" />
+            </Link>
+          </section>
+
+          <section className={`${card} p-5 flex flex-col justify-between`}>
+            <div>
+              <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">AI Interview</span>
+              <h3 className="font-semibold text-base mt-2">Mock Interview</h3>
+              <p className="text-xs text-muted-foreground mt-1">Rehearse role-specific technical and behavioral interview questions.</p>
+            </div>
+            <Link href="/interview" className={`${button} mt-5 w-full text-xs`}>
+              Start AI Interview <ArrowRight className="size-3.5" />
+            </Link>
+          </section>
+        </div>
+      )}
+
+      {activeTab === 'learning' && (
+        <section className={`${card} p-6`}>
+          <h2 className="font-semibold text-base mb-2">Target Role Learning Curriculum</h2>
+          <p className="text-xs text-muted-foreground mb-5">Subject areas mapped directly to {role?.name} job requirements.</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {role?.requirements?.map((req: any) => (
+              <div key={req.id} className="rounded-lg border border-border p-4 text-xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">{req.category}</span>
+                  <h3 className="font-semibold text-sm text-foreground mt-1">{req.skillName}</h3>
+                  <span className="text-[10px] text-muted-foreground">{req.importance} Requirement</span>
+                </div>
+                <Link href="/tutor" className={outlineButton}>
+                  Ask Tutor
+                </Link>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'ready' && (
+        <section className={`${card} p-6`}>
+          <h2 className="font-semibold text-base mb-2">Role Readiness Evaluation</h2>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg bg-muted p-4">
+              <p className="text-xs text-muted-foreground">Skill Coverage</p>
+              <p className="text-2xl font-semibold mt-1">{readiness?.metrics?.skillCoveragePct}%</p>
+            </div>
+            <div className="rounded-lg bg-muted p-4">
+              <p className="text-xs text-muted-foreground">Quiz Accuracy</p>
+              <p className="text-2xl font-semibold mt-1">{readiness?.metrics?.avgQuizPct}%</p>
+            </div>
+            <div className="rounded-lg bg-muted p-4">
+              <p className="text-xs text-muted-foreground">Coding Acceptance</p>
+              <p className="text-2xl font-semibold mt-1">{readiness?.metrics?.codingRatePct}%</p>
+            </div>
+            <div className="rounded-lg bg-muted p-4">
+              <p className="text-xs text-muted-foreground">Interview Evaluation</p>
+              <p className="text-2xl font-semibold mt-1">{readiness?.metrics?.avgInterviewScorePct}%</p>
+            </div>
+          </div>
+          {!readiness?.isSufficientData && (
+            <p className="mt-4 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 p-3 rounded-lg flex items-center gap-2">
+              <AlertCircle className="size-4 shrink-0" />
+              Complete at least 3 total quizzes, coding problems, or mock interviews to unlock full arithmetic readiness verification.
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* 5 Gap Analysis Buckets Grid */}
+      <div>
+        <h2 className="font-semibold text-base mb-4">Role Skill Gap Analysis</h2>
+        <div className="grid gap-5 lg:grid-cols-3">
+          {/* Bucket 1: Already Have */}
+          <div className={`${card} p-5`}>
+            <h3 className="font-semibold text-sm flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="size-4" /> What I Already Have ({gap?.alreadyHave?.length || 0})
+            </h3>
+            <div className="mt-3 flex flex-col gap-2">
+              {gap?.alreadyHave?.length > 0 ? (
+                gap.alreadyHave.map((s: any) => (
+                  <div key={s.skillName} className="rounded bg-muted p-2.5 text-xs">
+                    <p className="font-semibold">{s.skillName}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{s.note}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground italic py-3">No verified strong skills yet.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Bucket 2: Currently Learning */}
+          <div className={`${card} p-5`}>
+            <h3 className="font-semibold text-sm flex items-center gap-2 text-primary">
+              <Flame className="size-4" /> What I Am Learning ({gap?.learning?.length || 0})
+            </h3>
+            <div className="mt-3 flex flex-col gap-2">
+              {gap?.learning?.length > 0 ? (
+                gap.learning.map((s: any) => (
+                  <div key={s.skillName} className="rounded bg-muted p-2.5 text-xs">
+                    <p className="font-semibold">{s.skillName}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{s.note}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground italic py-3">No active learning topics.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Bucket 3: Need to Learn */}
+          <div className={`${card} p-5`}>
+            <h3 className="font-semibold text-sm flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <AlertCircle className="size-4" /> What I Need to Learn ({gap?.needToLearn?.length || 0})
+            </h3>
+            <div className="mt-3 flex flex-col gap-2">
+              {gap?.needToLearn?.length > 0 ? (
+                gap.needToLearn.map((s: any) => (
+                  <div key={s.skillName} className="rounded bg-muted p-2.5 text-xs">
+                    <p className="font-semibold">{s.skillName}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{s.note}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground italic py-3">All role requirements started!</p>
+              )}
+            </div>
+          </div>
+
+          {/* Bucket 4: Needs Improvement */}
+          <div className={`${card} p-5`}>
+            <h3 className="font-semibold text-sm flex items-center gap-2 text-rose-500">
+              <RotateCcw className="size-4" /> What Needs Improvement ({gap?.needsImprovement?.length || 0})
+            </h3>
+            <div className="mt-3 flex flex-col gap-2">
+              {gap?.needsImprovement?.length > 0 ? (
+                gap.needsImprovement.map((s: any) => (
+                  <div key={s.skillName} className="rounded bg-muted p-2.5 text-xs">
+                    <p className="font-semibold">{s.skillName}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{s.note}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground italic py-3">No low-accuracy areas detected.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Bucket 5: Needs Verification */}
+          <div className={`${card} p-5`}>
+            <h3 className="font-semibold text-sm flex items-center gap-2 text-indigo-500">
+              <Sparkles className="size-4" /> What Needs Verification ({gap?.needsVerification?.length || 0})
+            </h3>
+            <div className="mt-3 flex flex-col gap-2">
+              {gap?.needsVerification?.length > 0 ? (
+                gap.needsVerification.map((s: any) => (
+                  <div key={s.skillName} className="rounded bg-muted p-2.5 text-xs">
+                    <p className="font-semibold">{s.skillName}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{s.note}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground italic py-3">No unverified resume claims.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Role Selection Modal */}
+      {roleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4 backdrop-blur-sm">
+          <div className={`${card} flex h-[85vh] w-full max-w-3xl flex-col p-6 shadow-2xl`}>
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <div>
+                <h2 className="font-semibold text-lg">Select Your Target Career Role</h2>
+                <p className="text-xs text-muted-foreground">Choose a role to customize your preparation curriculum and readiness evaluation.</p>
+              </div>
+              <button onClick={() => setRoleModalOpen(false)} aria-label="Close modal" className="rounded-lg p-1 hover:bg-muted">
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-1 items-center gap-2 rounded-lg bg-muted px-3 py-2 text-xs">
+                <Search className="size-4 text-muted-foreground" />
+                <input
+                  value={roleSearch}
+                  onChange={(e) => setRoleSearch(e.target.value)}
+                  placeholder="Search roles..."
+                  className="w-full bg-transparent outline-none"
+                />
+              </div>
+
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="ALL">All Categories</option>
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mt-4 flex-1 overflow-auto flex flex-col gap-3">
+              {filteredRoles.map((r) => {
+                const isSelected = r.slug === role?.slug
+                return (
+                  <button
+                    key={r.id}
+                    disabled={updatingRole}
+                    onClick={() => handleSelectRole(r.slug)}
+                    className={`flex items-start justify-between rounded-lg border p-4 text-left transition ${
+                      isSelected ? 'border-primary bg-primary/5 font-semibold' : 'border-border hover:bg-accent/60'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm text-foreground">{r.name}</span>
+                        <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">{r.category}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{r.description}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {r.requirements?.slice(0, 4).map((req: any) => (
+                          <span key={req.id} className="rounded bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                            {req.skillName}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    {isSelected && <CheckCircle2 className="size-5 text-primary shrink-0 ml-3 mt-1" />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Auth({ register = false }: { register?: boolean }) {
   const router = useRouter()
   const [show, setShow] = useState(false)
@@ -3497,6 +4088,7 @@ export default function IntervueApp() {
 
   const page =
     pathname === '/preparation' ? <Preparation /> :
+    pathname === '/role-prep'   ? <RolePreparationView /> :
     pathname === '/tutor'       ? <Tutor /> :
     pathname === '/quizzes'     ? <Quizzes /> :
     pathname === '/coding'      ? <Coding /> :

@@ -119,6 +119,8 @@ model User {
   shareableResults        ShareableResult[]
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
+  resume                  UserResume?
+  roleAnalyses            UserRoleAnalysis[]
 
   @@index([email])
   @@index([googleId])
@@ -584,3 +586,72 @@ model InterviewEvaluation {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 }
+
+// ============================================================
+// STAGE 14: ROLE-BASED PREPARATION & RESUME ANALYZER
+// ============================================================
+
+model TargetRole {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  category    String   @default("Engineering")
+  description String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requirements RoleRequirement[]
+
+  @@index([slug])
+  @@index([category])
+}
+
+model RoleRequirement {
+  id           String     @id @default(cuid())
+  roleId       String
+  role         TargetRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  skillName    String
+  category     String     // 'Programming', 'CS Fundamentals', 'Tools & Frameworks', 'Interview Preparation'
+  importance   String     @default("REQUIRED") // 'REQUIRED' | 'RECOMMENDED'
+  subjectSlug  String?    // optional mapping to existing Subject slug (e.g. 'dsa', 'dbms', 'os', 'cn', 'oop', 'sql')
+  displayOrder Int        @default(0)
+  createdAt    DateTime   @default(now())
+
+  @@index([roleId])
+  @@index([subjectSlug])
+}
+
+model UserResume {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileName      String
+  fileSize      Int
+  extractedText String?
+  rawSkills     Json?
+  parsedData    Json?
+  uploadedAt    DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model UserRoleAnalysis {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleSlug         String
+  readinessScore   Float    @default(0)
+  metrics          Json
+  gapAnalysis      Json
+  personalizedPlan Json
+  hasResume        Boolean  @default(false)
+  analyzedAt       DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([userId, roleSlug])
+  @@index([userId])
+  @@index([roleSlug])
+}
+
