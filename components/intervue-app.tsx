@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   ArrowRight, BarChart3, BookOpen, BrainCircuit, Check, ChevronDown, Code2, Filter, Flame,
-  Home, LineChart, Menu, MessageSquareText, Mic, Moon, Play, Search, Settings2, Sparkles,
-  Sun, Target, Trophy, UserRound, Video, X, Camera, Clock3, RotateCcw, Send, SlidersHorizontal,
+  Home, LineChart, Menu, MessageSquareText, Mic, MicOff, Moon, Play, Search, Settings2, Sparkles,
+  Sun, Target, Trophy, UserRound, Video, VideoOff, PhoneOff, X, Camera, Clock3, RotateCcw, Send, SlidersHorizontal,
   CheckCircle2, Circle, AlertCircle, Lightbulb, LogOut, Eye, EyeOff, Loader2, History as HistoryIcon,
   Bot, Volume2, VolumeX
 } from 'lucide-react'
@@ -493,23 +493,58 @@ function Tutor() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // ── Load sessions on mount ──
+  // ── Load sessions on mount & auto-create default if empty ──
   useEffect(() => {
-    fetch('/api/tutor/sessions?limit=15')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.sessions) setSessions(d.sessions) })
-      .catch(() => {})
+    async function initTutor() {
+      try {
+        const r = await fetch('/api/tutor/sessions?limit=15')
+        if (r.ok) {
+          const d = await r.json()
+          const sessList = d?.sessions || []
+          setSessions(sessList)
+          if (sessList.length > 0) {
+            await loadSession(sessList[0].id)
+          } else {
+            // Auto-create initial default session for new users
+            await handleCreateSessionSilent()
+          }
+        }
+      } catch (err) {
+        console.error('Failed to init tutor sessions:', err)
+      }
+    }
 
     fetch('/api/subjects')
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.subjects) setAvailableSubjects(d.subjects) })
       .catch(() => {})
+
+    initTutor()
   }, [])
 
   // ── Auto-scroll messages ──
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // ── Silent initial session creation for new users ──
+  async function handleCreateSessionSilent(): Promise<string | null> {
+    try {
+      const r = await fetch('/api/tutor/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'AI Mentor Session' }),
+      })
+      const d = await r.json()
+      if (!r.ok || !d.session) return null
+      const newSess = d.session
+      setSessions(prev => [{ ...newSess, messageCount: 0 }, ...prev])
+      await loadSession(newSess.id)
+      return newSess.id
+    } catch {
+      return null
+    }
+  }
 
   // ── Load session messages ──
   async function loadSession(sessionId: string) {
@@ -564,31 +599,40 @@ function Tutor() {
   }
 
   // ── Send message ──
-  async function sendMessage() {
-    if (!input.trim() || sending || !activeSessionId) return
+  async function sendMessage(overrideText?: string) {
+    const rawContent = (overrideText || input).trim()
+    if (!rawContent || sending) return
     if (sessionStatus === 'ARCHIVED') { setChatError('This session is archived.'); return }
 
-    const userContent = input.trim()
-    setInput('')
+    let currentSessId = activeSessionId
+    if (!currentSessId) {
+      currentSessId = await handleCreateSessionSilent()
+      if (!currentSessId) {
+        setChatError('Failed to initialize session. Please try again.')
+        return
+      }
+    }
+
+    if (!overrideText) setInput('')
     setSending(true)
     setChatError(null)
 
     // Optimistic user message
     const tempId = `temp-${Date.now()}`
-    setMessages(prev => [...prev, { id: tempId, role: 'USER', content: userContent, createdAt: new Date().toISOString() }])
+    setMessages(prev => [...prev, { id: tempId, role: 'USER', content: rawContent, createdAt: new Date().toISOString() }])
 
     try {
-      const r = await fetch(`/api/tutor/sessions/${activeSessionId}/messages`, {
+      const r = await fetch(`/api/tutor/sessions/${currentSessId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: userContent }),
+        body: JSON.stringify({ content: rawContent }),
       })
       const d = await r.json()
 
       if (!r.ok) {
         // Remove optimistic message on failure
         setMessages(prev => prev.filter(m => m.id !== tempId))
-        setInput(userContent)
+        if (!overrideText) setInput(rawContent)
         if (r.status === 503) {
           setChatError('AI tutor is temporarily unavailable. Please try again.')
           setAiAvailable(false)
@@ -604,15 +648,16 @@ function Tutor() {
       setMessages(prev => [...prev, d.message])
       setAiAvailable(true)
       // Update session list updatedAt
-      setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, updatedAt: new Date().toISOString(), messageCount: s.messageCount + 2 } : s))
+      setSessions(prev => prev.map(s => s.id === currentSessId ? { ...s, updatedAt: new Date().toISOString(), messageCount: s.messageCount + 2 } : s))
     } catch {
       setMessages(prev => prev.filter(m => m.id !== tempId))
-      setInput(userContent)
+      if (!overrideText) setInput(rawContent)
       setChatError('Network error. Please try again.')
     } finally {
       setSending(false)
     }
   }
+
 
   const suggestedPrompts = [
     'Explain binary search step by step',
@@ -726,7 +771,7 @@ function Tutor() {
                 className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none disabled:opacity-50"
               />
               <button
-                onClick={sendMessage}
+                onClick={() => sendMessage()}
                 disabled={!input.trim() || !activeSessionId || sending || sessionStatus === 'ARCHIVED'}
                 aria-label="Send message"
                 className="grid size-9 place-items-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
@@ -798,32 +843,31 @@ function Tutor() {
               )}
 
               {/* 7 Role-Aware Tutor Mode Quick Action Shortcuts */}
-              {activeSessionId && (
-                <div className="mt-5">
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Tutor Modes & Quick Actions</h2>
-                  <div className="grid gap-2">
-                    {[
-                      { label: '📚 Teach me this', prompt: '[MODE:LEARN] Explain the core concepts, patterns, and trade-offs for my current topic in simple terms.' },
-                      { label: '🎯 Practice question', prompt: '[MODE:PRACTICE] Give me a placement practice question for my target role and let me answer.' },
-                      { label: '💡 Give me a hint', prompt: '[MODE:HINT] Give me a guiding hint for my current topic or problem without giving away the final answer.' },
-                      { label: '🔍 Explain my mistake', prompt: '[MODE:EXPLAIN_MISTAKE] Explain common conceptual mistakes candidates make in this topic during technical interviews.' },
-                      { label: '🎙️ Interview practice', prompt: '[MODE:INTERVIEW_PREP] Ask me a technical interview question tailored to my selected target career role.' },
-                      { label: '🔁 Review weak areas', prompt: '[MODE:REVISION] Help me revise my weak topics and key edge cases before my placement interviews.' },
-                      { label: '🚀 Prepare for my role', prompt: '[MODE:ROLE_READINESS] What specific skills and projects do I need to master next for my target role?' },
-                    ].map((item) => (
-                      <button
-                        key={item.label}
-                        onClick={() => {
-                          setInput(item.prompt)
-                        }}
-                        className="rounded-lg border border-border p-2.5 text-left text-xs font-medium transition hover:border-primary hover:bg-primary/5"
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
+              <div className="mt-5">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Tutor Modes & Quick Actions</h2>
+                <div className="grid gap-2">
+                  {[
+                    { label: '📚 Teach me this', prompt: '[MODE:LEARN] Explain the core concepts, patterns, and trade-offs for my current topic in simple terms.' },
+                    { label: '🎯 Practice question', prompt: '[MODE:PRACTICE] Give me a placement practice question for my target role and let me answer.' },
+                    { label: '💡 Give me a hint', prompt: '[MODE:HINT] Give me a guiding hint for my current topic or problem without giving away the final answer.' },
+                    { label: '🔍 Explain my mistake', prompt: '[MODE:EXPLAIN_MISTAKE] Explain common conceptual mistakes candidates make in this topic during technical interviews.' },
+                    { label: '🎙️ Interview practice', prompt: '[MODE:INTERVIEW_PREP] Ask me a technical interview question tailored to my selected target career role.' },
+                    { label: '🔁 Review weak areas', prompt: '[MODE:REVISION] Help me revise my weak topics and key edge cases before my placement interviews.' },
+                    { label: '🚀 Prepare for my role', prompt: '[MODE:ROLE_READINESS] What specific skills and projects do I need to master next for my target role?' },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      onClick={() => {
+                        sendMessage(item.prompt)
+                      }}
+                      disabled={sending}
+                      className="rounded-lg border border-border p-2.5 text-left text-xs font-medium transition hover:border-primary hover:bg-primary/5 disabled:opacity-50"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
                 </div>
-              )}
+              </div>
             </>
           )}
         </aside>
@@ -2067,11 +2111,16 @@ function LiveInterview({
   const [error, setError] = useState<string | null>(null)
   const [lastEval, setLastEval] = useState<{ overallScore: number; feedback: string; strengths?: string[]; improvements?: string[] } | null>(null)
 
-  // Audio / Visual Speech States
+  // Audio / Visual Speech & Camera States
   const [speaking, setSpeaking] = useState(false)
   const [listening, setListening] = useState(false)
   const [ttsMuted, setTtsMuted] = useState(false)
+  const [cameraOn, setCameraOn] = useState(true)
   const [recognition, setRecognition] = useState<any>(null)
+
+  // Media Stream Ref
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
 
   // Load session state
   const fetchSession = async () => {
@@ -2092,6 +2141,37 @@ function LiveInterview({
   useEffect(() => {
     fetchSession()
   }, [sessionId])
+
+  // Local Candidate Webcam Stream Setup
+  useEffect(() => {
+    let active = true
+    if (cameraOn && typeof window !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+        .then(stream => {
+          if (!active) { stream.getTracks().forEach(t => t.stop()); return; }
+          streamRef.current = stream
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream
+          }
+        })
+        .catch(err => {
+          console.warn('Webcam stream unavailable:', err)
+          if (active) setCameraOn(false)
+        })
+    } else {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop())
+        streamRef.current = null
+      }
+    }
+    return () => {
+      active = false
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop())
+        streamRef.current = null
+      }
+    }
+  }, [cameraOn])
 
   // Speech Synthesis (TTS) — Speak question out loud when new question arrives
   useEffect(() => {
@@ -2202,7 +2282,7 @@ function LiveInterview({
       } else if (data.nextQuestion) {
         // Advance to next question
         setCurrentQuestion(data.nextQuestion)
-        setSession(prev => prev ? { ...prev, currentQuestionNumber: data.nextQuestion.questionNumber } : null)
+        setSession((prev: any) => prev ? { ...prev, currentQuestionNumber: data.nextQuestion.questionNumber } : null)
         await fetchSession()
       }
     } catch {
@@ -2227,7 +2307,7 @@ function LiveInterview({
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-3">
         <Loader2 className="size-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Loading video interview simulation…</p>
+        <p className="text-sm text-muted-foreground">Connecting to live AI video interview room…</p>
       </div>
     )
   }
@@ -2237,13 +2317,13 @@ function LiveInterview({
   const progressPct = Math.round(((qNum - 1) / totalQ) * 100)
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <span className="inline-block size-2 rounded-full bg-rose-500 animate-ping"></span>
-            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">Live Video Interview</p>
+            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">Live Video Rehearsal</p>
           </div>
           <h1 className="mt-1 text-2xl font-semibold">
             {session?.title || `${session?.difficulty} ${session?.interviewType} Interview`}
@@ -2252,26 +2332,13 @@ function LiveInterview({
             Target Role: <strong className="text-foreground">{session?.targetRole || 'Software Engineer'}</strong> {session?.subject && `· ${session.subject.name}`}
           </p>
         </div>
+
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              const newMuted = !ttsMuted
-              setTtsMuted(newMuted)
-              if (newMuted && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                window.speechSynthesis.cancel()
-                setSpeaking(false)
-              }
-            }}
-            className={outlineButton}
-          >
-            {ttsMuted ? <VolumeX className="size-4 text-muted-foreground" /> : <Volume2 className="size-4 text-primary" />}
-            {ttsMuted ? 'Muted' : 'Audio On'}
-          </button>
-          <span className="rounded-md bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+          <span className="rounded-md bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
             Question {qNum} of {totalQ}
           </span>
-          <button onClick={handleAbandonSession} className="rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/10">
-            End Interview
+          <button onClick={handleAbandonSession} className="rounded-lg border border-destructive/30 px-3.5 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/10 transition">
+            End Call
           </button>
         </div>
       </div>
@@ -2282,148 +2349,239 @@ function LiveInterview({
       </div>
 
       {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive flex items-center gap-2">
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-xs text-destructive flex items-center gap-2">
           <AlertCircle className="size-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      {/* Main Video Interview Grid */}
-      <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr]">
-        {/* Left: Visual AI Interviewer Video Box */}
-        <section className={`${card} flex flex-col items-center justify-between p-6 bg-gradient-to-b from-card via-card to-muted/40 relative overflow-hidden border-2 border-primary/20`}>
-          <div className="w-full flex items-center justify-between border-b border-border pb-3">
-            <div className="flex items-center gap-2">
-              <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary uppercase">
+      {/* ==================================================================== */}
+      {/* TWO-PANEL VIDEO INTERVIEW CALL CONTAINER (Matching Reference Image) */}
+      {/* ==================================================================== */}
+      <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-4 md:p-6 shadow-2xl relative flex flex-col gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+
+          {/* LEFT PANEL: AI INTERVIEWER VIDEO PANEL */}
+          <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 flex flex-col justify-between p-4 shadow-xl group">
+            {/* Background realistic interviewer visual presentation */}
+            <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-900/60 to-zinc-900/20" />
+
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+              <div className="relative grid size-28 place-items-center rounded-full bg-gradient-to-tr from-primary/30 via-primary/60 to-primary text-primary-foreground shadow-2xl ring-8 ring-primary/15">
+                {speaking && (
+                  <div className="absolute inset-0 rounded-full bg-primary/40 animate-ping" />
+                )}
+                <Bot className="size-14 text-white drop-shadow-lg" />
+              </div>
+              <p className="mt-4 text-sm font-semibold text-white">Technical AI Interviewer</p>
+              <p className="text-[11px] text-zinc-400 mt-0.5">Assessing {session?.targetRole || 'Software Engineer'}</p>
+            </div>
+
+            {/* Top Badges */}
+            <div className="relative z-10 flex items-center justify-between w-full">
+              <span className="rounded-md bg-black/60 backdrop-blur-md px-3 py-1 text-xs font-semibold text-white border border-white/10 flex items-center gap-1.5">
+                <span className="size-2 rounded-full bg-emerald-500"></span>
                 AI Interviewer
               </span>
-              <span className="text-[10px] text-muted-foreground">Virtual Interviewer Avatar</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground">
-              {speaking ? (
-                <span className="inline-flex items-center gap-1 text-emerald-500 animate-pulse">
-                  <Volume2 className="size-3" /> Speaking question...
-                </span>
-              ) : listening ? (
-                <span className="inline-flex items-center gap-1 text-rose-500 animate-pulse">
-                  <Mic className="size-3" /> Listening for response...
-                </span>
-              ) : submitting ? (
-                <span className="inline-flex items-center gap-1 text-amber-500 animate-pulse">
-                  <Loader2 className="size-3 animate-spin" /> Evaluating answer...
-                </span>
-              ) : (
-                <span className="text-muted-foreground">Interviewer ready</span>
-              )}
-            </div>
-          </div>
 
-          {/* Animated AI Avatar Head Visual */}
-          <div className="my-8 flex flex-col items-center justify-center">
-            <div className="relative grid size-32 place-items-center rounded-full bg-gradient-to-tr from-primary/20 via-primary/40 to-primary text-primary-foreground shadow-xl ring-8 ring-primary/10">
-              {speaking && (
-                <div className="absolute inset-0 rounded-full bg-primary/30 animate-ping" />
-              )}
-              <Bot className="size-16 text-primary-foreground drop-shadow-md" />
+              <span className="rounded-md bg-black/60 backdrop-blur-md px-2.5 py-1 text-[11px] font-medium text-zinc-300 border border-white/10">
+                {speaking ? '🔊 Speaking...' : listening ? '🎙 Listening...' : submitting ? '⚡ Evaluating...' : 'Ready'}
+              </span>
             </div>
 
-            {/* Audio Wave Indicators */}
-            <div className="mt-4 flex items-center gap-1.5 h-6">
-              {[12, 24, 16, 28, 20, 32, 18, 26, 14].map((h, i) => (
-                <span
-                  key={i}
-                  className={`w-1 rounded-full bg-primary transition-all duration-150 ${
-                    speaking || listening ? 'animate-pulse' : 'opacity-30'
-                  }`}
-                  style={{ height: speaking || listening ? `${h}px` : '6px' }}
-                />
-              ))}
-            </div>
-
-            <p className="mt-3 text-sm font-semibold text-foreground">Technical Placement Interviewer</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Assessing {session?.targetRole || 'Software Engineer'}</p>
-          </div>
-
-          <div className="w-full rounded-lg bg-muted p-3 text-center text-xs text-muted-foreground">
-            {speaking ? '🔊 Audio output active' : 'Click "Read text instead" to toggle mute'}
-          </div>
-        </section>
-
-        {/* Right: Question Text & Student Audio/Text Response Box */}
-        <section className={`${card} flex flex-col justify-between p-6`}>
-          <div>
-            {/* Question Display */}
-            <div className="border-b border-border pb-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-primary">Question {qNum}</span>
-                <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                  Difficulty: {currentQuestion?.difficulty || session?.difficulty}
-                </span>
+            {/* Bottom Spoken Question Transcript Overlay (Reference Image Match) */}
+            <div className="relative z-10 mt-auto bg-zinc-900/90 backdrop-blur-md text-white text-xs p-3.5 rounded-xl border border-white/10 shadow-2xl flex items-center gap-3">
+              <div className="flex items-center gap-1 shrink-0">
+                {[12, 22, 16, 26, 18].map((h, i) => (
+                  <span
+                    key={i}
+                    className={`w-1 rounded-full bg-primary transition-all ${speaking ? 'animate-pulse' : 'opacity-30'}`}
+                    style={{ height: speaking ? `${h}px` : '6px' }}
+                  />
+                ))}
               </div>
-              <h2 className="mt-2 text-base font-semibold leading-relaxed text-foreground">
-                {currentQuestion?.questionText || 'Loading question...'}
-              </h2>
+              <p className="text-zinc-200 text-xs leading-relaxed line-clamp-2">
+                {currentQuestion?.questionText || 'Generating interview question...'}
+              </p>
             </div>
+          </div>
 
-            {/* Previous Question Feedback */}
-            {lastEval && (
-              <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs leading-relaxed">
-                <div className="font-semibold text-emerald-600 dark:text-emerald-400">
-                  Last Answer Feedback (Score: {lastEval.overallScore}/10)
+          {/* RIGHT PANEL: CANDIDATE WEBCAM VIDEO PANEL */}
+          <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 flex flex-col justify-between p-4 shadow-xl">
+            {/* Live Camera Stream or Fallback Avatar */}
+            {cameraOn ? (
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 text-center p-6">
+                <div className="grid size-24 place-items-center rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700">
+                  <UserRound className="size-12" />
                 </div>
-                <p className="text-muted-foreground mt-1">{lastEval.feedback}</p>
+                <p className="mt-3 text-xs font-medium text-zinc-400">Camera turned off</p>
+                <p className="text-[10px] text-zinc-500 mt-1">Click the camera icon below to enable preview</p>
               </div>
             )}
 
-            {/* Student Answer Controls */}
-            <div className="mt-5">
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Your Answer
-                </label>
-                <button
-                  onClick={toggleListening}
-                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
-                    listening
-                      ? 'bg-rose-500 text-white animate-pulse'
-                      : 'bg-primary/10 text-primary hover:bg-primary/20'
-                  }`}
-                >
-                  <Mic className="size-3.5" />
-                  {listening ? 'Stop Speaking' : 'Speak Answer'}
-                </button>
-              </div>
+            {/* Dark Overlay for top/bottom badges */}
+            <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-transparent to-zinc-950/40 pointer-events-none" />
 
-              <textarea
-                value={answerText}
-                onChange={(e) => setAnswerText(e.target.value)}
-                disabled={submitting}
-                placeholder={
-                  listening
-                    ? 'Listening to your voice... Speak your answer clearly into your microphone.'
-                    : 'Type your answer here or click "Speak Answer" to use microphone...'
-                }
-                rows={6}
-                className="w-full rounded-lg border border-input bg-background p-3 text-xs leading-relaxed outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-              />
+            {/* Top Badges */}
+            <div className="relative z-10 flex items-center justify-between w-full">
+              <span className="rounded-md bg-black/60 backdrop-blur-md px-3 py-1 text-xs font-semibold text-white border border-white/10 flex items-center gap-1.5">
+                <span className={`size-2 rounded-full ${cameraOn ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                Candidate
+              </span>
+
+              {listening && (
+                <span className="rounded-md bg-rose-500/80 backdrop-blur-md px-2.5 py-1 text-[11px] font-semibold text-white animate-pulse flex items-center gap-1">
+                  <Mic className="size-3" /> Audio Active
+                </span>
+              )}
+            </div>
+
+            {/* Bottom Candidate Response Transcript Overlay (Reference Image Match) */}
+            <div className="relative z-10 mt-auto bg-zinc-900/90 backdrop-blur-md text-white text-xs p-3.5 rounded-xl border border-white/10 shadow-2xl flex items-center gap-3">
+              <div className="flex items-center gap-1 shrink-0">
+                {[14, 24, 18, 28, 16].map((h, i) => (
+                  <span
+                    key={i}
+                    className={`w-1 rounded-full bg-emerald-400 transition-all ${listening ? 'animate-pulse' : 'opacity-30'}`}
+                    style={{ height: listening ? `${h}px` : '6px' }}
+                  />
+                ))}
+              </div>
+              <p className="text-zinc-200 text-xs leading-relaxed line-clamp-2 font-mono">
+                {answerText.trim()
+                  ? answerText
+                  : listening
+                  ? 'Listening for your response... Speak into microphone...'
+                  : 'Click microphone or type your answer below...'}
+              </p>
             </div>
           </div>
 
-          <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-4">
-            <span className="text-[10px] text-muted-foreground">
-              {answerText.trim().length} characters typed
-            </span>
-            <button
-              onClick={handleSubmitAnswer}
-              disabled={!answerText.trim() || submitting}
-              className={`${button} text-xs py-2 px-4 disabled:opacity-50`}
-            >
-              {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-              {submitting ? 'Evaluating...' : 'Submit Answer'}
-            </button>
-          </div>
-        </section>
+        </div>
+
+        {/* BOTTOM FLOATING CALL CONTROL BAR (Exact Reference Image Match) */}
+        <div className="flex items-center justify-center gap-4 py-2.5 px-6 bg-zinc-900/90 backdrop-blur-xl border border-zinc-800 rounded-full shadow-2xl mx-auto w-fit">
+          {/* Microphone Control */}
+          <button
+            onClick={toggleListening}
+            title={listening ? 'Stop Microphone' : 'Start Microphone'}
+            className={`size-12 rounded-full grid place-items-center transition-all ${
+              listening
+                ? 'bg-rose-600 text-white animate-pulse ring-4 ring-rose-500/30'
+                : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700'
+            }`}
+          >
+            {listening ? <Mic className="size-5" /> : <MicOff className="size-5" />}
+          </button>
+
+          {/* End Call Button */}
+          <button
+            onClick={handleAbandonSession}
+            title="End Interview Call"
+            className="size-14 rounded-full bg-red-600 hover:bg-red-700 text-white grid place-items-center shadow-lg hover:scale-105 transition"
+          >
+            <PhoneOff className="size-6" />
+          </button>
+
+          {/* Camera Control */}
+          <button
+            onClick={() => setCameraOn(!cameraOn)}
+            title={cameraOn ? 'Turn Camera Off' : 'Turn Camera On'}
+            className={`size-12 rounded-full grid place-items-center transition-all ${
+              cameraOn
+                ? 'bg-zinc-800 hover:bg-zinc-700 text-emerald-400 border border-zinc-700'
+                : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+            }`}
+          >
+            {cameraOn ? <Video className="size-5" /> : <VideoOff className="size-5" />}
+          </button>
+
+          {/* Audio Speaker Mute */}
+          <button
+            onClick={() => {
+              const newMuted = !ttsMuted
+              setTtsMuted(newMuted)
+              if (newMuted && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                window.speechSynthesis.cancel()
+                setSpeaking(false)
+              }
+            }}
+            title={ttsMuted ? 'Unmute AI Voice' : 'Mute AI Voice'}
+            className={`size-12 rounded-full border border-zinc-700 grid place-items-center transition-all ${
+              ttsMuted ? 'bg-rose-500/20 text-rose-400' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+            }`}
+          >
+            {ttsMuted ? <VolumeX className="size-5" /> : <Volume2 className="size-5" />}
+          </button>
+        </div>
       </div>
+
+      {/* ==================================================================== */}
+      {/* CANDIDATE ANSWER INPUT WORKSPACE & EVALUATION FEEDBACK */}
+      {/* ==================================================================== */}
+      <section className={`${card} p-6 flex flex-col gap-4`}>
+        {/* Previous Answer Evaluation Summary */}
+        {lastEval && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs leading-relaxed">
+            <div className="flex items-center justify-between font-semibold text-emerald-600 dark:text-emerald-400 mb-1">
+              <span>✓ Last Answer Evaluation</span>
+              <span>Overall Score: {lastEval.overallScore}/10</span>
+            </div>
+            <p className="text-muted-foreground">{lastEval.feedback}</p>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Response & Speech Transcript
+          </label>
+          <span className="text-xs text-muted-foreground">
+            {answerText.trim().length} characters
+          </span>
+        </div>
+
+        <textarea
+          value={answerText}
+          onChange={(e) => setAnswerText(e.target.value)}
+          disabled={submitting}
+          placeholder={
+            listening
+              ? 'Listening to microphone... Speak your response clearly...'
+              : 'Type your answer or use microphone controls above...'
+          }
+          rows={4}
+          className="w-full rounded-xl border border-input bg-background p-4 text-xs leading-relaxed outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+        />
+
+        <div className="flex items-center justify-between border-t border-border pt-3">
+          <p className="text-[11px] text-muted-foreground">
+            Click <strong>Submit Answer</strong> when finished speaking or typing.
+          </p>
+          <button
+            onClick={handleSubmitAnswer}
+            disabled={!answerText.trim() || submitting}
+            className={`${button} px-5 py-2 text-xs font-semibold disabled:opacity-50`}
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" /> Evaluating...
+              </>
+            ) : (
+              <>
+                <Send className="size-3.5" /> Submit Answer
+              </>
+            )}
+          </button>
+        </div>
+      </section>
     </div>
   )
 }
