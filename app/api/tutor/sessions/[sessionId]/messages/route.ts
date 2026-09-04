@@ -69,7 +69,7 @@ export async function POST(
   }
 
   // 4. Send message and get AI response
-  const result = await sendTutorMessage(sessionId, session.userId, parsed.data.content)
+  const result = await sendTutorMessage(sessionId, session.userId, parsed.data.content, parsed.data.mode)
 
   if (!result.success) {
     // Map internal error types to appropriate HTTP status codes

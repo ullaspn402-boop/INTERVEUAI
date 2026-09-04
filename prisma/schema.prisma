@@ -33,6 +33,38 @@ enum ActivityType {
   CODING_SUBMITTED
   INTERVIEW_COMPLETED
   TUTOR_SESSION
+  GD_COMPLETED
+  COMPANY_PLAN_CREATED
+  COMPANY_PLAN_COMPLETED
+}
+
+// ============================================================
+// GROUP DISCUSSION ENUMS
+// ============================================================
+
+enum GDSessionStatus {
+  WAITING
+  INTRO
+  IN_PROGRESS
+  CLOSING
+  COMPLETED
+  ABANDONED
+}
+
+enum GDParticipantType {
+  USER
+  AI
+  MODERATOR
+}
+
+enum GDContributionType {
+  OPENING
+  ARGUMENT
+  COUNTER_ARGUMENT
+  EXAMPLE
+  SUMMARY
+  MODERATOR_PROMPT
+  CLOSING
 }
 
 enum CodingSubmissionStatus {
@@ -121,6 +153,8 @@ model User {
   emailVerificationTokens EmailVerificationToken[]
   resume                  UserResume?
   roleAnalyses            UserRoleAnalysis[]
+  gdSessions              GDSession[]
+  companyPreparationPlans CompanyPreparationPlan[]
 
   @@index([email])
   @@index([googleId])
@@ -654,4 +688,179 @@ model UserRoleAnalysis {
   @@index([userId])
   @@index([roleSlug])
 }
+
+// ============================================================
+// STAGE 17: AI GROUP DISCUSSION ENGINE
+// ============================================================
+
+model GDSession {
+  id              String          @id @default(cuid())
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic           String
+  topicContext    String
+  targetRole      String?
+  totalRounds     Int             @default(5)
+  currentRound    Int             @default(0)
+  status          GDSessionStatus @default(WAITING)
+  overallScore    Float?
+  overallFeedback String?
+  startedAt       DateTime        @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  participants  GDParticipant[]
+  contributions GDContribution[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model GDParticipant {
+  id          String            @id @default(cuid())
+  sessionId   String
+  session     GDSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type        GDParticipantType
+  name        String
+  persona     String?           // e.g. 'Analyst', 'Devil's Advocate', 'Synthesizer'
+  avatarSeed  String?           // seed for deterministic avatar generation
+  createdAt   DateTime          @default(now())
+
+  contributions GDContribution[]
+
+  @@index([sessionId])
+}
+
+model GDContribution {
+  id               String             @id @default(cuid())
+  sessionId        String
+  session          GDSession          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  participantId    String
+  participant      GDParticipant      @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  round            Int
+  type             GDContributionType @default(ARGUMENT)
+  content          String
+  createdAt        DateTime           @default(now())
+
+  evaluation GDEvaluation?
+
+  @@index([sessionId])
+  @@index([participantId])
+  @@index([sessionId, round])
+  @@index([createdAt])
+}
+
+model GDEvaluation {
+  id                  String         @id @default(cuid())
+  contributionId      String         @unique
+  contribution        GDContribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+  communicationScore  Float          // 0-20
+  relevanceScore      Float          // 0-20
+  depthScore          Float          // 0-20
+  leadershipScore     Float          // 0-20
+  originalityScore    Float          // 0-20
+  overallScore        Float          // 0-100 (sum of above)
+  feedback            String
+  strengths           Json?
+  improvements        Json?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([contributionId])
+}
+
+// ============================================================
+// STAGE 18: COMPANY-WISE PREPARATION ENGINE
+// ============================================================
+
+model Company {
+  id                 String    @id @default(cuid())
+  slug               String    @unique
+  name               String
+  shortName          String?
+  logoUrl            String?
+  industry           String
+  description        String
+  websiteUrl         String?
+  active             Boolean   @default(true)
+  dataSourceType     String    @default("COMMONLY_REPORTED") // VERIFIED | COMMONLY_REPORTED | GENERAL_GUIDANCE | USER_PROVIDED
+  dataLastVerifiedAt DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  profiles     CompanyPreparationProfile[]
+  requirements CompanyRequirement[]
+  plans        CompanyPreparationPlan[]
+
+  @@index([slug])
+  @@index([industry])
+  @@index([active])
+}
+
+model CompanyPreparationProfile {
+  id               String    @id @default(cuid())
+  companyId        String
+  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  targetRoleSlug   String
+  experienceLevel  String    // STUDENT | FRESHER | ENTRY_LEVEL | EXPERIENCED | CAREER_SWITCHER
+  preparationType  String    // APTITUDE | DSA | CODING | DBMS | SQL | OOP | OS | CN | TECHNICAL_INTERVIEW | HR_INTERVIEW | GROUP_DISCUSSION | RESUME_DISCUSSION | PROJECT_DISCUSSION | COMMUNICATION | BEHAVIORAL | CUSTOM
+  title            String
+  description      String
+  confidenceLabel  String    @default("COMMONLY_REPORTED") // VERIFIED | COMMONLY_REPORTED | GENERAL_GUIDANCE | USER_PROVIDED
+  sourceType       String    @default("COMMONLY_REPORTED")
+  verifiedAt       DateTime?
+  active           Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([companyId, targetRoleSlug, experienceLevel, preparationType])
+  @@index([companyId])
+  @@index([targetRoleSlug])
+  @@index([experienceLevel])
+}
+
+model CompanyRequirement {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roleSlug    String
+  skillName   String
+  category    String
+  importance  Float    @default(1.0)
+  confidence  String   @default("COMMONLY_REPORTED")
+  sourceType  String   @default("COMMONLY_REPORTED")
+  displayOrder Int     @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId, roleSlug])
+}
+
+model CompanyPreparationPlan {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId         String?
+  company           Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  customCompanyName String?
+  targetRoleSlug    String
+  experienceLevel   String    @default("FRESHER") // STUDENT | FRESHER | ENTRY_LEVEL | EXPERIENCED | CAREER_SWITCHER
+  preparationGoal   String?
+  status            String    @default("ACTIVE") // ACTIVE | COMPLETED | PAUSED | ABANDONED
+  currentStage      Int       @default(1)
+  readinessScore    Float?
+  metrics           Json
+  planData          Json
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([status])
+  @@index([targetRoleSlug])
+}
+
 

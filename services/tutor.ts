@@ -18,6 +18,7 @@
 
 import { db } from '@/lib/db'
 import { callTutorAI, buildTutorSystemPrompt, type AIMessage } from '@/services/ai'
+import { TARGET_ROLES } from '@/lib/roles-data'
 
 // ─── Rate Limiter ─────────────────────────────────────────────────────────────
 
@@ -195,8 +196,8 @@ export async function getTutorSession(sessionId: string, userId: string) {
  * Flow:
  * 1. Verify session ownership
  * 2. Verify session is not ARCHIVED
- * 3. Load subject/topic context
- * 4. Load bounded conversation history (last N messages)
+ * 3. Load subject/topic & target role context
+ * 4. Load bounded conversation history (most recent N messages)
  * 5. Construct AI context (system prompt + history + new message)
  * 6. Call OpenAI
  * 7. On success: persist USER + ASSISTANT messages in a single transaction
@@ -207,7 +208,8 @@ export async function getTutorSession(sessionId: string, userId: string) {
 export async function sendTutorMessage(
   sessionId: string,
   userId: string,
-  content: string
+  rawContent: string,
+  modeOverride?: string
 ): Promise<
   | { success: true; message: { id: string; role: string; content: string; createdAt: string } }
   | { success: false; error: string; message: string; retryAfterMs?: number }
@@ -234,6 +236,25 @@ export async function sendTutorMessage(
     }
   }
 
+  // Parse mode prefix if embedded in content, and strip it for persistence
+  let cleanContent = rawContent.trim()
+  let tutorMode: 'LEARN' | 'ASK_DOUBT' | 'PRACTICE' | 'INTERVIEW_PREP' | 'CODING_HELP' | 'EXPLAIN_MISTAKE' | 'ROLE_PREP' | 'HINT' | 'REVISION' | 'ROLE_READINESS' =
+    (modeOverride as any) || 'LEARN'
+
+  if (cleanContent.startsWith('[MODE:')) {
+    const match = cleanContent.match(/^\[MODE:([A-Z_]+)\]\s*/)
+    if (match && match[1]) {
+      if (!modeOverride) {
+        tutorMode = match[1] as any
+      }
+      cleanContent = cleanContent.replace(/^\[MODE:[A-Z_]+\]\s*/, '').trim()
+    }
+  }
+
+  if (!cleanContent) {
+    return { success: false, error: 'invalid_content', message: 'Message content cannot be empty.' }
+  }
+
   // 3. Load user's targetRole & resume context
   const user = await db.user.findUnique({
     where: { id: userId },
@@ -241,31 +262,27 @@ export async function sendTutorMessage(
   })
 
   const targetRoleSlug = user?.targetRole || 'software-engineer'
-  
-  // Extract optional mode directive if passed in content prefix e.g. "[MODE:PRACTICE]"
-  let tutorMode: 'LEARN' | 'PRACTICE' | 'HINT' | 'EXPLAIN_MISTAKE' | 'INTERVIEW_PREP' | 'REVISION' | 'ROLE_READINESS' = 'LEARN'
-  if (content.startsWith('[MODE:')) {
-    const match = content.match(/^\[MODE:([A-Z_]+)\]/)
-    if (match && match[1]) {
-      tutorMode = match[1] as any
-    }
-  }
+  const roleDef = TARGET_ROLES.find((r) => r.slug === targetRoleSlug)
+  const roleRequirements = roleDef?.requirements.map((req) => req.skillName)
 
   // Build role-aware system prompt
   const systemPrompt = buildTutorSystemPrompt({
     subjectName: session.subject?.name,
     topicName: session.topic?.name,
-    targetRole: targetRoleSlug,
+    targetRole: roleDef?.name || targetRoleSlug,
     tutorMode,
+    roleRequirements,
   })
 
-  // 4. Load bounded conversation history
-  const history = await db.tutorMessage.findMany({
+  // 4. Load bounded conversation history (Fetch most recent N messages, then reverse to chronological)
+  const recentHistory = await db.tutorMessage.findMany({
     where: { sessionId },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: 'desc' },
     take: MAX_CONTEXT_MESSAGES,
     select: { role: true, content: true },
   })
+
+  const history = recentHistory.reverse()
 
   // 5. Construct AI context
   const aiMessages: AIMessage[] = [
@@ -274,7 +291,7 @@ export async function sendTutorMessage(
       role: m.role.toLowerCase() as 'user' | 'assistant',
       content: m.content,
     })),
-    { role: 'user', content },
+    { role: 'user', content: cleanContent },
   ]
 
   // 6. Call OpenAI
@@ -289,13 +306,13 @@ export async function sendTutorMessage(
     }
   }
 
-  // 7. Persist USER + ASSISTANT messages in a single transaction
+  // 7. Persist USER + ASSISTANT messages in a single transaction (with clean content)
   const [, assistantMsg] = await db.$transaction([
     db.tutorMessage.create({
       data: {
         sessionId,
         role: 'USER',
-        content,
+        content: cleanContent,
       },
     }),
     db.tutorMessage.create({

@@ -20,9 +20,11 @@
 import { db } from '@/lib/db'
 import {
   generateInterviewQuestionAI,
+  generateConversationalInterviewQuestionAI,
   evaluateInterviewAnswerAI,
   generateInterviewSummaryAI,
 } from '@/services/ai'
+import { TARGET_ROLES } from '@/lib/roles-data'
 import {
   InterviewType,
   QuizDifficulty,
@@ -39,9 +41,6 @@ import {
  * Each interview question answer triggers one OpenAI evaluation call.
  * Limitation: State is per-process; does not persist across restarts
  * or multiple server instances. Sufficient for single-instance deployments.
- *
- * Stage 10: Added as production hardening — interview answer route was
- * previously unlimited, creating potential for costly OpenAI abuse.
  */
 const INTERVIEW_RATE_LIMIT_MAX = 30
 const INTERVIEW_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000 // 1 hour
@@ -79,7 +78,6 @@ export function checkInterviewRateLimit(userId: string): {
 }
 
 // ─── Session Management ───────────────────────────────────────────────────────
-
 
 export interface CreateSessionOpts {
   interviewType?: InterviewType
@@ -355,23 +353,49 @@ export async function submitAnswerAndEvaluate(
     return [ans, ev]
   })
 
-  // Auto-generate next question if not last question
+  // Auto-generate conversational next question if not last question
   let nextQuestion = null
   if (!isLastQuestion) {
     const existingNext = session.questions.find((q) => q.questionNumber === nextQuestionNum)
     if (existingNext) {
       nextQuestion = existingNext
     } else {
-      const prevQTexts = session.questions.map((q) => q.questionText)
+      // Build history trajectory up to current question
+      const historyTrajectory = session.questions
+        .filter((q) => q.answer)
+        .map((q) => ({
+          questionNumber: q.questionNumber,
+          questionText: q.questionText,
+          answerText: q.answer!.answerText,
+          evaluation: q.answer!.evaluation as any,
+        }))
 
-      const nextAiRes = await generateInterviewQuestionAI({
+      // Append latest answer & evaluation
+      historyTrajectory.push({
+        questionNumber: question.questionNumber,
+        questionText: question.questionText,
+        answerText,
+        evaluation: evalData,
+      })
+
+      // Query target role definition
+      const targetRoleSlug = session.targetRole || 'software-engineer'
+      const roleDef = TARGET_ROLES.find(
+        (r) => r.slug === targetRoleSlug || r.name.toLowerCase() === targetRoleSlug.toLowerCase()
+      )
+      const roleSkills = roleDef?.requirements.map((r) => r.skillName)
+
+      const nextAiRes = await generateConversationalInterviewQuestionAI({
         interviewType: session.interviewType,
-        targetRole: session.targetRole || undefined,
+        targetRole: roleDef?.name || session.targetRole || 'Software Engineer',
         subjectName: session.subject?.name,
         difficulty: session.difficulty,
         questionNumber: nextQuestionNum,
         totalQuestions: session.questionCount,
-        previousQuestions: prevQTexts,
+        resumeSkills: roleSkills,
+        history: historyTrajectory,
+        latestAnswerText: answerText,
+        latestEvaluation: evalData,
       })
 
       if (nextAiRes.success) {

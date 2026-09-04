@@ -8,17 +8,19 @@ import {
   Home, LineChart, Menu, MessageSquareText, Mic, MicOff, Moon, Play, Search, Settings2, Sparkles,
   Sun, Target, Trophy, UserRound, Video, VideoOff, PhoneOff, X, Camera, Clock3, RotateCcw, Send, SlidersHorizontal,
   CheckCircle2, Circle, AlertCircle, Lightbulb, LogOut, Eye, EyeOff, Loader2, History as HistoryIcon,
-  Bot, Volume2, VolumeX
+  Bot, Volume2, VolumeX, Users, Building2, Briefcase
 } from 'lucide-react'
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: Home },
   { href: '/preparation', label: 'Preparation', icon: BookOpen },
   { href: '/role-prep', label: 'Role Prep', icon: Target },
+  { href: '/company-prep', label: 'Company Prep', icon: Building2 },
   { href: '/tutor', label: 'AI Tutor', icon: MessageSquareText },
   { href: '/quizzes', label: 'Quizzes', icon: BrainCircuit },
   { href: '/coding', label: 'Coding', icon: Code2 },
   { href: '/interview', label: 'AI Interview', icon: Video },
+  { href: '/gd', label: 'Group Discussion', icon: Users },
   { href: '/analytics', label: 'Analytics', icon: LineChart },
 ]
 const subjects = [
@@ -482,10 +484,14 @@ function Tutor() {
   const [newTitle, setNewTitle] = useState('')
   const [creating, setCreating] = useState(false)
 
+  // ── Mode selection state ──
+  const [selectedMode, setSelectedMode] = useState<string>('LEARN')
+
   // ── Chat state ──
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
+  const [lastFailedMessage, setLastFailedMessage] = useState<{ content: string; mode?: string } | null>(null)
   const [loadingSession, setLoadingSession] = useState(false)
 
   // ── AI status ──
@@ -493,16 +499,53 @@ function Tutor() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // ── Load sessions on mount & auto-create default if empty ──
+  // ── Mode definitions ──
+  const TUTOR_MODES = [
+    { id: 'LEARN', label: '📚 Learn Concept', description: 'Step-by-step concept explanations with examples' },
+    { id: 'ASK_DOUBT', label: '❓ Ask Doubt', description: 'Clear specific doubts and misunderstandings' },
+    { id: 'PRACTICE', label: '🎯 Practice', description: 'Interactive questions & mistake explanation loop' },
+    { id: 'INTERVIEW_PREP', label: '🎙️ Interview Prep', description: 'Simulated technical placement interview questions' },
+    { id: 'CODING_HELP', label: '💻 Coding Help', description: 'DSA logic & algorithm debugging guidance' },
+    { id: 'EXPLAIN_MISTAKE', label: '🔍 Explain Mistake', description: 'Analyze why an answer is wrong with correct logic' },
+    { id: 'ROLE_PREP', label: '🚀 Role Prep', description: 'Target role skill alignment and preparation guidance' },
+  ]
+
+  // ── Load sessions on mount & auto-create context-aware session if params exist ──
   useEffect(() => {
     async function initTutor() {
+      // Parse URL search params if present
+      let paramSubjectId: string | null = null
+      let paramTopicId: string | null = null
+      let paramMode: string | null = null
+
+      if (typeof window !== 'undefined') {
+        const searchParams = new URLSearchParams(window.location.search)
+        paramSubjectId = searchParams.get('subjectId')
+        paramTopicId = searchParams.get('topicId')
+        paramMode = searchParams.get('mode')
+      }
+
+      if (paramMode && TUTOR_MODES.some(m => m.id === paramMode)) {
+        setSelectedMode(paramMode)
+      }
+
       try {
         const r = await fetch('/api/tutor/sessions?limit=15')
         if (r.ok) {
           const d = await r.json()
           const sessList = d?.sessions || []
           setSessions(sessList)
-          if (sessList.length > 0) {
+
+          if (paramSubjectId) {
+            // Find existing session matching subject/topic if available
+            const matching = sessList.find((s: any) => s.subject?.id === paramSubjectId && (!paramTopicId || s.topic?.id === paramTopicId))
+            if (matching) {
+              await loadSession(matching.id)
+            } else {
+              // Auto-create session with URL subject/topic context
+              await handleCreateSessionWithContext({ subjectId: paramSubjectId, topicId: paramTopicId || undefined })
+            }
+          } else if (sessList.length > 0) {
             await loadSession(sessList[0].id)
           } else {
             // Auto-create initial default session for new users
@@ -527,7 +570,7 @@ function Tutor() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // ── Silent initial session creation for new users ──
+  // ── Silent initial session creation ──
   async function handleCreateSessionSilent(): Promise<string | null> {
     try {
       const r = await fetch('/api/tutor/sessions', {
@@ -546,10 +589,30 @@ function Tutor() {
     }
   }
 
+  // ── Context-aware session creation ──
+  async function handleCreateSessionWithContext(opts: { subjectId?: string; topicId?: string; title?: string }): Promise<string | null> {
+    try {
+      const r = await fetch('/api/tutor/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(opts),
+      })
+      const d = await r.json()
+      if (!r.ok || !d.session) return null
+      const newSess = d.session
+      setSessions(prev => [{ ...newSess, messageCount: 0 }, ...prev])
+      await loadSession(newSess.id)
+      return newSess.id
+    } catch {
+      return null
+    }
+  }
+
   // ── Load session messages ──
   async function loadSession(sessionId: string) {
     setLoadingSession(true)
     setChatError(null)
+    setLastFailedMessage(null)
     setActiveSessionId(sessionId)
     setMessages([])
     try {
@@ -568,7 +631,7 @@ function Tutor() {
     }
   }
 
-  // ── Create new session ──
+  // ── Create new session from UI modal ──
   async function handleCreateSession() {
     setCreating(true)
     setChatError(null)
@@ -599,10 +662,12 @@ function Tutor() {
   }
 
   // ── Send message ──
-  async function sendMessage(overrideText?: string) {
+  async function sendMessage(overrideText?: string, modeOverride?: string) {
     const rawContent = (overrideText || input).trim()
     if (!rawContent || sending) return
     if (sessionStatus === 'ARCHIVED') { setChatError('This session is archived.'); return }
+
+    const targetMode = modeOverride || selectedMode
 
     let currentSessId = activeSessionId
     if (!currentSessId) {
@@ -616,6 +681,7 @@ function Tutor() {
     if (!overrideText) setInput('')
     setSending(true)
     setChatError(null)
+    setLastFailedMessage(null)
 
     // Optimistic user message
     const tempId = `temp-${Date.now()}`
@@ -625,7 +691,7 @@ function Tutor() {
       const r = await fetch(`/api/tutor/sessions/${currentSessId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: rawContent }),
+        body: JSON.stringify({ content: rawContent, mode: targetMode }),
       })
       const d = await r.json()
 
@@ -633,11 +699,13 @@ function Tutor() {
         // Remove optimistic message on failure
         setMessages(prev => prev.filter(m => m.id !== tempId))
         if (!overrideText) setInput(rawContent)
+        setLastFailedMessage({ content: rawContent, mode: targetMode })
+
         if (r.status === 503) {
-          setChatError('AI tutor is temporarily unavailable. Please try again.')
+          setChatError(d.error || 'AI tutor is temporarily unavailable. Please try again.')
           setAiAvailable(false)
         } else if (r.status === 429) {
-          setChatError('You\'ve reached the message limit (20/hour). Please wait before sending more.')
+          setChatError(d.error || 'You\'ve reached the message limit (20/hour). Please wait before sending more.')
         } else {
           setChatError(d.error || 'Failed to send message.')
         }
@@ -652,20 +720,12 @@ function Tutor() {
     } catch {
       setMessages(prev => prev.filter(m => m.id !== tempId))
       if (!overrideText) setInput(rawContent)
+      setLastFailedMessage({ content: rawContent, mode: targetMode })
       setChatError('Network error. Please try again.')
     } finally {
       setSending(false)
     }
   }
-
-
-  const suggestedPrompts = [
-    'Explain binary search step by step',
-    'What is database normalization?',
-    'Explain process scheduling in OS',
-    'Difference between TCP and UDP',
-    'Explain OOP concepts with examples',
-  ]
 
   const activeSubjectLabel = sessionSubject
     ? sessionSubject.shortTitle
@@ -683,25 +743,46 @@ function Tutor() {
         {/* ── Chat Panel ── */}
         <section className={`${card} flex min-h-[570px] flex-col overflow-hidden`}>
           {/* Header */}
-          <div className="flex items-center gap-3 border-b border-border p-5">
-            <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
-              <Sparkles className="size-4" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold">Intervue Coach</p>
-              <p className="text-xs text-muted-foreground">
-                {aiAvailable === false
-                  ? 'AI unavailable · check configuration'
-                  : aiAvailable === true
-                  ? 'AI Powered · GPT-4o mini'
-                  : activeSessionId ? 'Loading session…' : 'Select or start a session'}
-              </p>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-5">
+            <div className="flex items-center gap-3">
+              <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
+                <Sparkles className="size-4" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold">Intervue Coach</p>
+                <p className="text-xs text-muted-foreground">
+                  {aiAvailable === false
+                    ? 'AI service unavailable'
+                    : aiAvailable === true
+                    ? 'AI Powered · Role Aware'
+                    : activeSessionId ? 'Loading session…' : 'Select or start a session'}
+                </p>
+              </div>
             </div>
             {activeSubjectLabel && (
-              <span className="ml-auto rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+              <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
                 {activeSubjectLabel}
               </span>
             )}
+          </div>
+
+          {/* Mode Selector Pill Bar */}
+          <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border bg-muted/30 px-4 py-2 text-xs">
+            <span className="font-semibold text-muted-foreground mr-1 shrink-0">Mode:</span>
+            {TUTOR_MODES.map(m => (
+              <button
+                key={m.id}
+                onClick={() => setSelectedMode(m.id)}
+                className={`shrink-0 rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                  selectedMode === m.id
+                    ? 'bg-primary text-primary-foreground shadow-xs'
+                    : 'bg-background text-muted-foreground hover:bg-accent hover:text-foreground'
+                }`}
+                title={m.description}
+              >
+                {m.label}
+              </button>
+            ))}
           </div>
 
           {/* Messages */}
@@ -746,8 +827,17 @@ function Tutor() {
               </div>
             )}
             {chatError && (
-              <div className="self-stretch rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive">
-                {chatError}
+              <div className="self-stretch flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive">
+                <span>{chatError}</span>
+                {lastFailedMessage && (
+                  <button
+                    onClick={() => sendMessage(lastFailedMessage.content, lastFailedMessage.mode)}
+                    disabled={sending}
+                    className="rounded bg-destructive text-destructive-foreground px-2.5 py-1 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50"
+                  >
+                    Retry
+                  </button>
+                )}
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -767,7 +857,7 @@ function Tutor() {
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) sendMessage()
                 }}
-                placeholder={activeSessionId ? 'Ask about your preparation…' : 'Select a session to start chatting…'}
+                placeholder={activeSessionId ? `Ask in ${TUTOR_MODES.find(m => m.id === selectedMode)?.label || 'Learn'} mode…` : 'Select a session to start chatting…'}
                 className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none disabled:opacity-50"
               />
               <button
@@ -842,23 +932,24 @@ function Tutor() {
                 </div>
               )}
 
-              {/* 7 Role-Aware Tutor Mode Quick Action Shortcuts */}
+              {/* Quick Actions Shortcuts */}
               <div className="mt-5">
-                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Tutor Modes & Quick Actions</h2>
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Quick Prompts</h2>
                 <div className="grid gap-2">
                   {[
-                    { label: '📚 Teach me this', prompt: '[MODE:LEARN] Explain the core concepts, patterns, and trade-offs for my current topic in simple terms.' },
-                    { label: '🎯 Practice question', prompt: '[MODE:PRACTICE] Give me a placement practice question for my target role and let me answer.' },
-                    { label: '💡 Give me a hint', prompt: '[MODE:HINT] Give me a guiding hint for my current topic or problem without giving away the final answer.' },
-                    { label: '🔍 Explain my mistake', prompt: '[MODE:EXPLAIN_MISTAKE] Explain common conceptual mistakes candidates make in this topic during technical interviews.' },
-                    { label: '🎙️ Interview practice', prompt: '[MODE:INTERVIEW_PREP] Ask me a technical interview question tailored to my selected target career role.' },
-                    { label: '🔁 Review weak areas', prompt: '[MODE:REVISION] Help me revise my weak topics and key edge cases before my placement interviews.' },
-                    { label: '🚀 Prepare for my role', prompt: '[MODE:ROLE_READINESS] What specific skills and projects do I need to master next for my target role?' },
+                    { label: '📚 Teach me this concept', mode: 'LEARN', prompt: 'Explain the core concepts, patterns, and trade-offs for my current topic in simple terms.' },
+                    { label: '🎯 Practice question', mode: 'PRACTICE', prompt: 'Give me a placement practice question for my target role and let me answer.' },
+                    { label: '💡 Give me a hint', mode: 'HINT', prompt: 'Give me a guiding hint for my current topic or problem without giving away the final answer.' },
+                    { label: '🔍 Explain common mistakes', mode: 'EXPLAIN_MISTAKE', prompt: 'Explain common conceptual mistakes candidates make in this topic during technical interviews.' },
+                    { label: '🎙️ Interview practice', mode: 'INTERVIEW_PREP', prompt: 'Ask me a technical interview question tailored to my selected target career role.' },
+                    { label: '🔁 Review weak areas', mode: 'REVISION', prompt: 'Help me revise my weak topics and key edge cases before my placement interviews.' },
+                    { label: '🚀 Prepare for my role', mode: 'ROLE_PREP', prompt: 'What specific skills and projects do I need to master next for my target role?' },
                   ].map((item) => (
                     <button
                       key={item.label}
                       onClick={() => {
-                        sendMessage(item.prompt)
+                        setSelectedMode(item.mode)
+                        sendMessage(item.prompt, item.mode)
                       }}
                       disabled={sending}
                       className="rounded-lg border border-border p-2.5 text-left text-xs font-medium transition hover:border-primary hover:bg-primary/5 disabled:opacity-50"
@@ -4889,6 +4980,1404 @@ function LandingPage() {
   )
 }
 
+// ============================================================
+// STAGE 17: GROUP DISCUSSION COMPONENT
+// ============================================================
+
+type GDParticipant = {
+  id: string
+  type: 'USER' | 'AI' | 'MODERATOR'
+  name: string
+  persona: string | null
+  avatarSeed: string | null
+}
+
+type GDContributionItem = {
+  id: string
+  participantId: string
+  participantName: string
+  participantType: string
+  participantPersona: string | null
+  round: number
+  type: string
+  content: string
+  createdAt: string
+  evaluation: {
+    communicationScore: number
+    relevanceScore: number
+    depthScore: number
+    leadershipScore: number
+    originalityScore: number
+    overallScore: number
+    feedback: string
+    strengths: string[]
+    improvements: string[]
+  } | null
+}
+
+type GDSessionData = {
+  id: string
+  topic: string
+  topicContext: string
+  targetRole: string | null
+  totalRounds: number
+  currentRound: number
+  status: string
+  overallScore: number | null
+  overallFeedback: string | null
+  startedAt: string
+  completedAt: string | null
+  createdAt: string
+  participants: GDParticipant[]
+  contributions: GDContributionItem[]
+}
+
+function getParticipantColor(type: string, persona: string | null): string {
+  if (type === 'MODERATOR') return '#8b5cf6'
+  if (type === 'USER') return '#10b981'
+  const colors: Record<string, string> = {
+    Analyst: '#3b82f6',
+    "Devil's Advocate": '#ef4444',
+    Synthesizer: '#f59e0b',
+    Pragmatist: '#06b6d4',
+  }
+  return colors[persona || ''] || '#6366f1'
+}
+
+function getParticipantInitials(name: string): string {
+  return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
+}
+
+function GDAvatar({ participant, size = 'md' }: { participant: { name: string; type: string; persona: string | null }; size?: 'sm' | 'md' | 'lg' }) {
+  const color = getParticipantColor(participant.type, participant.persona)
+  const sizeClass = size === 'sm' ? 'size-7 text-[10px]' : size === 'lg' ? 'size-12 text-base' : 'size-9 text-xs'
+  return (
+    <div
+      className={`${sizeClass} flex items-center justify-center rounded-full font-bold text-white flex-shrink-0`}
+      style={{ backgroundColor: color }}
+      title={`${participant.name} — ${participant.persona || participant.type}`}
+    >
+      {participant.type === 'MODERATOR' ? '⚖' : getParticipantInitials(participant.name)}
+    </div>
+  )
+}
+
+function GDScoreBar({ label, value, max = 20, color }: { label: string; value: number; max?: number; color: string }) {
+  const pct = Math.round((value / max) * 100)
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground font-medium">{label}</span>
+        <span className="font-semibold tabular-nums" style={{ color }}>{value}/{max}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-700"
+          style={{ width: `${pct}%`, backgroundColor: color }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function GroupDiscussion() {
+  const [screen, setScreen] = useState<'list' | 'setup' | 'active' | 'result'>('list')
+  const [sessions, setSessions] = useState<GDSessionData[]>([])
+  const [activeSession, setActiveSession] = useState<GDSessionData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [contributionText, setContributionText] = useState('')
+  const [animatingTurns, setAnimatingTurns] = useState(false)
+  const [visibleContributions, setVisibleContributions] = useState<GDContributionItem[]>([])
+  const [createError, setCreateError] = useState('')
+  const [submitError, setSubmitError] = useState('')
+  const [setupRounds, setSetupRounds] = useState(5)
+  const [setupParticipants, setSetupParticipants] = useState(3)
+  const [setupCustomTopic, setSetupCustomTopic] = useState('')
+  const chatEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    fetch('/api/gd?limit=20')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.sessions) setSessions(d.sessions) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [visibleContributions])
+
+  async function handleCreateSession() {
+    setCreating(true)
+    setCreateError('')
+    try {
+      const res = await fetch('/api/gd', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: setupCustomTopic.trim() || undefined,
+          participantCount: setupParticipants,
+          totalRounds: setupRounds,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setCreateError(data.error || 'Failed to create GD session')
+        return
+      }
+      const sess: GDSessionData = data.session
+      setActiveSession(sess)
+      setVisibleContributions(sess.contributions)
+      setScreen('active')
+    } catch {
+      setCreateError('Network error. Please try again.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function handleResumeSession(sessionId: string) {
+    const res = await fetch(`/api/gd/${sessionId}`)
+    if (!res.ok) return
+    const data = await res.json()
+    const sess: GDSessionData = data.session
+    setActiveSession(sess)
+    setVisibleContributions(sess.contributions)
+    if (sess.status === 'COMPLETED') setScreen('result')
+    else setScreen('active')
+  }
+
+  async function handleSubmitContribution() {
+    if (!activeSession || !contributionText.trim() || submitting) return
+    setSubmitting(true)
+    setSubmitError('')
+    const text = contributionText.trim()
+    setContributionText('')
+
+    try {
+      const res = await fetch(`/api/gd/${activeSession.id}/contribute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contributionText: text }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setSubmitError(data.error || 'Failed to submit contribution')
+        setContributionText(text)
+        return
+      }
+
+      const newContribs: GDContributionItem[] = data.newContributions
+      setActiveSession((prev) => prev
+        ? {
+            ...prev,
+            currentRound: data.currentRound,
+            status: data.sessionStatus,
+            overallScore: data.overallScore ?? prev.overallScore,
+            overallFeedback: data.overallFeedback ?? prev.overallFeedback,
+          }
+        : prev
+      )
+
+      // Animate turns one by one with 900ms delay
+      setAnimatingTurns(true)
+      for (let i = 0; i < newContribs.length; i++) {
+        await new Promise((resolve) => setTimeout(resolve, i === 0 ? 0 : 900))
+        setVisibleContributions((prev) => [...prev, newContribs[i]])
+      }
+      setAnimatingTurns(false)
+
+      if (data.sessionStatus === 'COMPLETED') {
+        await new Promise((resolve) => setTimeout(resolve, 1200))
+        setScreen('result')
+      }
+    } catch {
+      setSubmitError('Network error. Please try again.')
+      setContributionText(text)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleAbandon() {
+    if (!activeSession) return
+    await fetch(`/api/gd/${activeSession.id}/abandon`, { method: 'POST' })
+    setScreen('list')
+    setActiveSession(null)
+    setVisibleContributions([])
+    // Refresh list
+    const res = await fetch('/api/gd?limit=20')
+    if (res.ok) { const d = await res.json(); if (d?.sessions) setSessions(d.sessions) }
+  }
+
+  const isCompleted = activeSession?.status === 'COMPLETED'
+  const userParticipant = activeSession?.participants.find((p) => p.type === 'USER')
+  const aiParticipants = activeSession?.participants.filter((p) => p.type === 'AI') || []
+  const latestUserEval = [...visibleContributions]
+    .reverse()
+    .find((c) => c.participantType === 'USER' && c.evaluation)?.evaluation
+
+  const allUserEvals = visibleContributions
+    .filter((c) => c.participantType === 'USER' && c.evaluation)
+    .map((c) => c.evaluation!)
+
+  const avgComm = allUserEvals.length ? allUserEvals.reduce((s, e) => s + e.communicationScore, 0) / allUserEvals.length : 0
+  const avgRel = allUserEvals.length ? allUserEvals.reduce((s, e) => s + e.relevanceScore, 0) / allUserEvals.length : 0
+  const avgDepth = allUserEvals.length ? allUserEvals.reduce((s, e) => s + e.depthScore, 0) / allUserEvals.length : 0
+  const avgLead = allUserEvals.length ? allUserEvals.reduce((s, e) => s + e.leadershipScore, 0) / allUserEvals.length : 0
+  const avgOrig = allUserEvals.length ? allUserEvals.reduce((s, e) => s + e.originalityScore, 0) / allUserEvals.length : 0
+
+  // ── LIST screen ──────────────────────────────────────────────────────────────
+  if (screen === 'list') {
+    return (
+      <div className="flex flex-col gap-7">
+        <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">Stage 17</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">AI Group Discussion</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Practice GDs with AI participants — Analyst, Devil&apos;s Advocate, Synthesizer — on role-relevant topics.
+              Get scored on Communication, Relevance, Depth, Leadership &amp; Originality.
+            </p>
+          </div>
+          <button
+            id="gd-new-session-btn"
+            onClick={() => setScreen('setup')}
+            className={button}
+          >
+            <Users className="size-4" />
+            Start New GD
+          </button>
+        </section>
+
+        {/* Stats row */}
+        {sessions.length > 0 && (
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className={`${card} p-5`}>
+              <p className="text-sm text-muted-foreground">Total GD Sessions</p>
+              <p className="mt-3 text-2xl font-semibold">{sessions.length}</p>
+            </div>
+            <div className={`${card} p-5`}>
+              <p className="text-sm text-muted-foreground">Completed</p>
+              <p className="mt-3 text-2xl font-semibold">{sessions.filter((s) => s.status === 'COMPLETED').length}</p>
+            </div>
+            <div className={`${card} p-5`}>
+              <p className="text-sm text-muted-foreground">Avg GD Score</p>
+              <p className="mt-3 text-2xl font-semibold">
+                {sessions.filter((s) => s.overallScore != null).length > 0
+                  ? Math.round(sessions.filter((s) => s.overallScore != null).reduce((sum, s) => sum + (s.overallScore ?? 0), 0) / sessions.filter((s) => s.overallScore != null).length)
+                  : '—'}
+                {sessions.filter((s) => s.overallScore != null).length > 0 && <span className="text-sm text-muted-foreground">/100</span>}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Session list */}
+        {loading ? (
+          <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>
+        ) : sessions.length === 0 ? (
+          <div className={`${card} flex flex-col items-center gap-4 py-16 text-center`}>
+            <div className="grid size-16 place-items-center rounded-2xl bg-primary/10">
+              <Users className="size-8 text-primary" />
+            </div>
+            <div>
+              <p className="text-lg font-semibold">No GD sessions yet</p>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                Start your first AI Group Discussion to practise speaking in a simulated GD environment.
+              </p>
+            </div>
+            <button onClick={() => setScreen('setup')} className={button}>
+              <Play className="size-4" />
+              Start First GD
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {sessions.map((s) => (
+              <div
+                key={s.id}
+                className={`${card} flex flex-col gap-3 p-5 sm:flex-row sm:items-center`}
+              >
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                      style={{
+                        background: s.status === 'COMPLETED' ? '#10b98120' : s.status === 'ABANDONED' ? '#ef444420' : '#f59e0b20',
+                        color: s.status === 'COMPLETED' ? '#10b981' : s.status === 'ABANDONED' ? '#ef4444' : '#f59e0b',
+                      }}
+                    >
+                      {s.status}
+                    </span>
+                    {s.overallScore != null && (
+                      <span className="text-xs font-semibold text-primary">{s.overallScore.toFixed(0)}/100</span>
+                    )}
+                  </div>
+                  <p className="truncate font-medium">{s.topic}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Round {s.currentRound}/{s.totalRounds} · {new Date(s.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {(s.status === 'INTRO' || s.status === 'IN_PROGRESS') && (
+                    <button
+                      onClick={() => handleResumeSession(s.id)}
+                      className={outlineButton}
+                    >
+                      <Play className="size-4" /> Resume
+                    </button>
+                  )}
+                  {s.status === 'COMPLETED' && (
+                    <button
+                      onClick={() => handleResumeSession(s.id)}
+                      className={outlineButton}
+                    >
+                      <Eye className="size-4" /> View Results
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── SETUP screen ─────────────────────────────────────────────────────────────
+  if (screen === 'setup') {
+    return (
+      <div className="flex flex-col gap-7">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setScreen('list')}
+            className={outlineButton}
+          >
+            ← Back
+          </button>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">New GD Session</p>
+            <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">Configure Your GD</h1>
+          </div>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Topic */}
+          <div className={`${card} flex flex-col gap-5 p-6 lg:col-span-2`}>
+            <div>
+              <h2 className="text-base font-semibold">Topic</h2>
+              <p className="text-sm text-muted-foreground">Leave blank for an AI-generated topic tailored to your target role.</p>
+            </div>
+            <textarea
+              id="gd-custom-topic"
+              value={setupCustomTopic}
+              onChange={(e) => setSetupCustomTopic(e.target.value)}
+              placeholder="E.g. Should AI replace human decision-making in high-stakes domains? (optional)"
+              className="w-full rounded-lg border border-border bg-background px-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+              rows={2}
+              maxLength={300}
+            />
+          </div>
+
+          {/* Rounds */}
+          <div className={`${card} flex flex-col gap-4 p-6`}>
+            <div>
+              <h2 className="text-base font-semibold">Rounds</h2>
+              <p className="text-sm text-muted-foreground">Number of speaking turns each participant gets.</p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {[3, 4, 5, 6, 8].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setSetupRounds(n)}
+                  className={`rounded-lg px-4 py-2 text-sm font-semibold border transition ${
+                    setupRounds === n
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'border-border text-muted-foreground hover:bg-accent'
+                  }`}
+                >
+                  {n} rounds
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Participants */}
+          <div className={`${card} flex flex-col gap-4 p-6`}>
+            <div>
+              <h2 className="text-base font-semibold">AI Participants</h2>
+              <p className="text-sm text-muted-foreground">Number of AI participants alongside you.</p>
+            </div>
+            <div className="flex gap-2">
+              {[2, 3, 4].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setSetupParticipants(n)}
+                  className={`rounded-lg px-4 py-2 text-sm font-semibold border transition ${
+                    setupParticipants === n
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'border-border text-muted-foreground hover:bg-accent'
+                  }`}
+                >
+                  {n - 1} AI + You
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* AI Personas Preview */}
+          <div className={`${card} p-6 lg:col-span-2`}>
+            <h2 className="mb-4 text-base font-semibold">AI Participant Personas</h2>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                { name: 'Analyst', desc: 'Data-driven, fact-focused, challenges unsupported claims', color: '#3b82f6' },
+                { name: "Devil's Advocate", desc: 'Challenges every point to stress-test arguments', color: '#ef4444' },
+                { name: 'Synthesizer', desc: 'Bridges perspectives and finds common ground', color: '#f59e0b' },
+                { name: 'Pragmatist', desc: 'Focuses on implementation, cost, and feasibility', color: '#06b6d4' },
+              ].map((p) => (
+                <div key={p.name} className="flex items-start gap-3 rounded-xl border border-border p-3">
+                  <div
+                    className="size-9 flex-shrink-0 grid place-items-center rounded-full font-bold text-white text-xs"
+                    style={{ background: p.color }}
+                  >
+                    {p.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">{p.name}</p>
+                    <p className="text-xs text-muted-foreground">{p.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {createError && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            {createError}
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-3">
+          <button onClick={() => setScreen('list')} className={outlineButton}>Cancel</button>
+          <button
+            id="gd-start-btn"
+            onClick={handleCreateSession}
+            disabled={creating}
+            className={`${button} min-w-[160px]`}
+          >
+            {creating ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                <span>Generating topic…</span>
+              </>
+            ) : (
+              <>
+                <Users className="size-4" />
+                Start GD
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── ACTIVE screen ─────────────────────────────────────────────────────────────
+  if (screen === 'active' && activeSession) {
+    const currentPhase = animatingTurns
+      ? 'AI SPEAKING'
+      : activeSession.status === 'CLOSING'
+      ? 'CLOSING'
+      : `ROUND ${activeSession.currentRound + 1} OF ${activeSession.totalRounds}`
+
+    return (
+      <div className="flex flex-col gap-0" style={{ height: 'calc(100vh - 8rem)' }}>
+        {/* Header */}
+        <div className={`${card} mb-4 flex items-center justify-between gap-4 px-5 py-3 flex-shrink-0`}>
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex-shrink-0 grid size-9 place-items-center rounded-full bg-primary/10">
+              <Users className="size-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate font-semibold text-sm">{activeSession.topic}</p>
+              <p className="text-xs text-muted-foreground">{activeSession.topicContext.slice(0, 80)}…</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <span
+              className="rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wide"
+              style={{
+                background: animatingTurns ? '#f59e0b20' : '#10b98120',
+                color: animatingTurns ? '#f59e0b' : '#10b981',
+              }}
+            >
+              {currentPhase}
+            </span>
+            {/* Participants */}
+            <div className="hidden sm:flex items-center gap-1">
+              {activeSession.participants.map((p) => (
+                <GDAvatar key={p.id} participant={p} size="sm" />
+              ))}
+            </div>
+            <button
+              onClick={handleAbandon}
+              className="grid size-8 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition"
+              title="Leave GD"
+            >
+              <PhoneOff className="size-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Chat area */}
+        <div className={`${card} flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4 min-h-0`}>
+          {visibleContributions.map((c, idx) => {
+            const isUser = c.participantType === 'USER'
+            const isModerator = c.participantType === 'MODERATOR'
+            const participantObj = activeSession.participants.find((p) => p.id === c.participantId) || {
+              name: c.participantName,
+              type: c.participantType as 'USER' | 'AI' | 'MODERATOR',
+              persona: c.participantPersona,
+              avatarSeed: null,
+            }
+            const color = getParticipantColor(c.participantType, c.participantPersona)
+
+            return (
+              <div
+                key={c.id}
+                className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} ${isModerator ? 'justify-center' : ''}`}
+                style={{
+                  animation: idx === visibleContributions.length - 1 ? 'fadeSlideIn 0.35s ease-out' : undefined,
+                }}
+              >
+                {!isModerator && <GDAvatar participant={participantObj} size="md" />}
+
+                <div className={`flex max-w-[75%] flex-col gap-1 ${isUser ? 'items-end' : 'items-start'} ${isModerator ? 'max-w-[80%] items-center w-full' : ''}`}>
+                  {!isModerator && (
+                    <div className={`flex items-center gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
+                      <span className="text-xs font-semibold" style={{ color }}>{c.participantName}</span>
+                      {c.participantPersona && c.participantPersona !== 'Candidate' && (
+                        <span className="rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: `${color}20`, color }}>
+                          {c.participantPersona}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-muted-foreground">R{c.round}</span>
+                    </div>
+                  )}
+
+                  <div
+                    className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                      isUser
+                        ? 'rounded-tr-sm bg-primary text-primary-foreground'
+                        : isModerator
+                        ? 'rounded-xl border border-border bg-muted text-muted-foreground text-center text-xs italic py-2 px-6'
+                        : 'rounded-tl-sm border border-border bg-card'
+                    }`}
+                  >
+                    {c.content}
+                  </div>
+
+                  {/* User score chip */}
+                  {isUser && c.evaluation && (
+                    <div className="flex items-center gap-2 mt-1">
+                      <span
+                        className="rounded-full px-2.5 py-0.5 text-xs font-bold"
+                        style={{
+                          background: c.evaluation.overallScore >= 70 ? '#10b98120' : c.evaluation.overallScore >= 50 ? '#f59e0b20' : '#ef444420',
+                          color: c.evaluation.overallScore >= 70 ? '#10b981' : c.evaluation.overallScore >= 50 ? '#f59e0b' : '#ef4444',
+                        }}
+                      >
+                        {c.evaluation.overallScore}/100
+                      </span>
+                      <span className="text-[10px] text-muted-foreground truncate max-w-[200px]">
+                        {c.evaluation.feedback.slice(0, 60)}…
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Typing indicator */}
+          {animatingTurns && (
+            <div className="flex gap-3 items-end">
+              <div className="size-9 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                <Bot className="size-4 text-muted-foreground" />
+              </div>
+              <div className="rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3">
+                <div className="flex gap-1">
+                  <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={chatEndRef} />
+        </div>
+
+        {/* Latest score sidebar (mobile hidden, desktop shown) */}
+        {latestUserEval && (
+          <div className="hidden xl:flex mt-3 items-center gap-4 rounded-xl border border-border bg-muted/40 px-5 py-3 flex-shrink-0">
+            <span className="text-xs font-semibold text-muted-foreground">Last turn:</span>
+            <div className="flex gap-4 flex-wrap">
+              {[
+                { label: 'Comm', val: latestUserEval.communicationScore, color: '#3b82f6' },
+                { label: 'Relev', val: latestUserEval.relevanceScore, color: '#10b981' },
+                { label: 'Depth', val: latestUserEval.depthScore, color: '#8b5cf6' },
+                { label: 'Lead', val: latestUserEval.leadershipScore, color: '#f59e0b' },
+                { label: 'Orig', val: latestUserEval.originalityScore, color: '#ef4444' },
+              ].map((d) => (
+                <div key={d.label} className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">{d.label}:</span>
+                  <span className="text-xs font-bold" style={{ color: d.color }}>{d.val}/20</span>
+                </div>
+              ))}
+              <div className="flex items-center gap-1.5 border-l border-border pl-3">
+                <span className="text-xs text-muted-foreground">Total:</span>
+                <span className="text-xs font-bold text-primary">{latestUserEval.overallScore}/100</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Input area */}
+        {!isCompleted && (
+          <div className={`${card} mt-3 flex gap-3 px-4 py-3 flex-shrink-0`}>
+            <textarea
+              id="gd-contribution-input"
+              value={contributionText}
+              onChange={(e) => setContributionText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !animatingTurns && !submitting) {
+                  e.preventDefault()
+                  handleSubmitContribution()
+                }
+              }}
+              placeholder={animatingTurns ? 'AI participants are speaking…' : 'Share your perspective… (Enter to submit, Shift+Enter for new line)'}
+              disabled={animatingTurns || submitting}
+              className="flex-1 resize-none rounded-lg border border-border bg-background px-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 min-h-[60px] max-h-[120px]"
+              rows={2}
+              maxLength={2000}
+            />
+            <div className="flex flex-col items-end justify-between gap-2">
+              <span className="text-[10px] text-muted-foreground tabular-nums">{contributionText.length}/2000</span>
+              <button
+                id="gd-submit-contribution-btn"
+                onClick={handleSubmitContribution}
+                disabled={!contributionText.trim() || animatingTurns || submitting}
+                className={`${button} px-3 py-2 disabled:opacity-50`}
+              >
+                {submitting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {submitError && (
+          <p className="mt-2 text-xs text-red-400 text-center">{submitError}</p>
+        )}
+      </div>
+    )
+  }
+
+  // ── RESULT screen ─────────────────────────────────────────────────────────────
+  if (screen === 'result' && activeSession) {
+    const score = activeSession.overallScore ?? 0
+    const scoreColor = score >= 70 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444'
+    const scoreLabel = score >= 80 ? 'Outstanding' : score >= 70 ? 'Strong Performance' : score >= 55 ? 'Good Effort' : score >= 40 ? 'Needs Improvement' : 'Keep Practising'
+
+    const allImprovements = Array.from(
+      new Set(allUserEvals.flatMap((e) => e.improvements))
+    ).slice(0, 4)
+    const allStrengths = Array.from(
+      new Set(allUserEvals.flatMap((e) => e.strengths))
+    ).slice(0, 4)
+
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">GD Complete</p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight">Your GD Results</h1>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setScreen('list'); setActiveSession(null); setVisibleContributions([]) }}
+              className={outlineButton}
+            >
+              ← Back to List
+            </button>
+            <button
+              onClick={() => { setScreen('setup'); setActiveSession(null); setVisibleContributions([]) }}
+              className={button}
+            >
+              <Users className="size-4" />
+              New GD
+            </button>
+          </div>
+        </div>
+
+        {/* Score hero */}
+        <div className={`${card} flex flex-col items-center gap-4 py-10 text-center`} style={{ background: `${scoreColor}08`, borderColor: `${scoreColor}30` }}>
+          <div
+            className="grid size-28 place-items-center rounded-full text-4xl font-bold text-white"
+            style={{ background: `conic-gradient(${scoreColor} ${score * 3.6}deg, #1e1e2e 0)` }}
+          >
+            <div className="grid size-20 place-items-center rounded-full bg-card">
+              <span className="text-2xl font-bold" style={{ color: scoreColor }}>{score.toFixed(0)}</span>
+            </div>
+          </div>
+          <div>
+            <p className="text-xl font-semibold" style={{ color: scoreColor }}>{scoreLabel}</p>
+            <p className="text-sm text-muted-foreground mt-1">GD Topic: {activeSession.topic}</p>
+          </div>
+          {activeSession.overallFeedback && (
+            <p className="max-w-lg text-sm leading-6 text-muted-foreground italic px-4">
+              &ldquo;{activeSession.overallFeedback}&rdquo;
+            </p>
+          )}
+        </div>
+
+        {/* Dimension scores */}
+        <div className={`${card} p-6`}>
+          <h2 className="mb-5 text-base font-semibold">Score Breakdown</h2>
+          <div className="flex flex-col gap-4">
+            <GDScoreBar label="Communication" value={Math.round(avgComm * 10) / 10} color="#3b82f6" />
+            <GDScoreBar label="Relevance" value={Math.round(avgRel * 10) / 10} color="#10b981" />
+            <GDScoreBar label="Depth of Analysis" value={Math.round(avgDepth * 10) / 10} color="#8b5cf6" />
+            <GDScoreBar label="Leadership & Engagement" value={Math.round(avgLead * 10) / 10} color="#f59e0b" />
+            <GDScoreBar label="Originality" value={Math.round(avgOrig * 10) / 10} color="#ef4444" />
+          </div>
+        </div>
+
+        {/* Strengths & Improvements */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          {allStrengths.length > 0 && (
+            <div className={`${card} p-5`}>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-emerald-400">
+                <CheckCircle2 className="size-4" /> Strengths
+              </h2>
+              <ul className="flex flex-col gap-2">
+                {allStrengths.map((s, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <span className="mt-1 size-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {allImprovements.length > 0 && (
+            <div className={`${card} p-5`}>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-400">
+                <Lightbulb className="size-4" /> Areas to Improve
+              </h2>
+              <ul className="flex flex-col gap-2">
+                {allImprovements.map((s, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <span className="mt-1 size-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* Per-round transcript */}
+        <div className={`${card} p-5`}>
+          <h2 className="mb-4 text-base font-semibold">Your Contributions</h2>
+          <div className="flex flex-col gap-4">
+            {visibleContributions.filter((c) => c.participantType === 'USER').map((c, i) => (
+              <div key={c.id} className="rounded-xl border border-border p-4 flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-muted-foreground">Round {c.round}</span>
+                  {c.evaluation && (
+                    <span
+                      className="rounded-full px-2.5 py-0.5 text-xs font-bold"
+                      style={{
+                        background: c.evaluation.overallScore >= 70 ? '#10b98120' : '#f59e0b20',
+                        color: c.evaluation.overallScore >= 70 ? '#10b981' : '#f59e0b',
+                      }}
+                    >
+                      {c.evaluation.overallScore}/100
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm leading-relaxed">{c.content}</p>
+                {c.evaluation && (
+                  <p className="text-xs text-muted-foreground italic">{c.evaluation.feedback}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return null
+}
+
+const AVAILABLE_ROLES = [
+  { slug: 'software-engineer', name: 'Software Engineer' },
+  { slug: 'frontend-developer', name: 'Frontend Developer' },
+  { slug: 'backend-developer', name: 'Backend Developer' },
+  { slug: 'full-stack-developer', name: 'Full Stack Developer' },
+  { slug: 'data-analyst', name: 'Data Analyst' },
+  { slug: 'data-scientist', name: 'Data Scientist' },
+  { slug: 'ai-ml-engineer', name: 'AI/ML Engineer' },
+  { slug: 'devops-engineer', name: 'DevOps Engineer' },
+  { slug: 'mobile-developer', name: 'Mobile Developer' },
+  { slug: 'qa-engineer', name: 'QA Engineer' },
+  { slug: 'cybersecurity-analyst', name: 'Cybersecurity Analyst' },
+  { slug: 'product-analyst', name: 'Product Analyst' },
+]
+
+function CompanyPrepView() {
+  const router = useRouter()
+  const [plans, setPlans] = useState<any[]>([])
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null)
+  const [catalog, setCatalog] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [showModal, setShowModal] = useState(false)
+  const [search, setSearch] = useState('')
+
+  // Modal Form state
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('')
+  const [customCompanyName, setCustomCompanyName] = useState<string>('')
+  const [targetRoleSlug, setTargetRoleSlug] = useState<string>('software-engineer')
+  const [experienceLevel, setExperienceLevel] = useState<string>('FRESHER')
+  const [preparationGoal, setPreparationGoal] = useState<string>('')
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  async function fetchData() {
+    setLoading(true)
+    try {
+      const [plansRes, catRes] = await Promise.all([
+        fetch('/api/company-preparation'),
+        fetch('/api/companies?limit=30'),
+      ])
+      if (plansRes.ok) {
+        const pData = await plansRes.json()
+        setPlans(pData.plans || [])
+        if (pData.plans?.length > 0 && !selectedPlanId) {
+          setSelectedPlanId(pData.plans[0].id)
+        }
+      }
+      if (catRes.ok) {
+        const cData = await catRes.json()
+        setCatalog(cData.companies || [])
+        if (cData.companies?.length > 0 && !selectedCompanyId) {
+          setSelectedCompanyId(cData.companies[0].id)
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load company preparation data:', e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleCreatePlan() {
+    setSubmitting(true)
+    try {
+      const payload: any = {
+        targetRoleSlug,
+        experienceLevel,
+        preparationGoal: preparationGoal || undefined,
+      }
+      if (selectedCompanyId === 'custom') {
+        if (!customCompanyName.trim()) {
+          alert('Please enter a company name')
+          setSubmitting(false)
+          return
+        }
+        payload.customCompanyName = customCompanyName.trim()
+      } else {
+        payload.companyId = selectedCompanyId
+      }
+
+      const res = await fetch('/api/company-preparation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setShowModal(false)
+        await fetchData()
+        if (data.plan) {
+          setSelectedPlanId(data.plan.id)
+        }
+      } else {
+        const err = await res.json()
+        alert(err.error || 'Failed to create plan')
+      }
+    } catch (e) {
+      console.error('Create plan error:', e)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleAdvanceStage(planId: string, currentStage: number) {
+    try {
+      const res = await fetch(`/api/company-preparation/${planId}/advance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetStage: Math.min(12, currentStage + 1) }),
+      })
+      if (res.ok) {
+        await fetchData()
+      }
+    } catch (e) {
+      console.error('Advance stage error:', e)
+    }
+  }
+
+  const activePlan = plans.find((p) => p.id === selectedPlanId) || plans[0]
+  const planData = activePlan?.planData || {}
+  const metrics = activePlan?.metrics || {}
+  const stages = planData.stages || []
+  const focusAreas = planData.companyFocusAreas || []
+
+  const filteredCatalog = catalog.filter(
+    (c) =>
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.industry.toLowerCase().includes(search.toLowerCase())
+  )
+
+  return (
+    <div className="flex flex-col gap-8">
+      {/* Header */}
+      <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">Stage 18 Engine</span>
+            <span className="text-xs text-muted-foreground">• Dynamic & Evidence-Based</span>
+          </div>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Company-Wise Preparation Engine</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Target specific companies with tailored aptitude, DSA, core CS, mock interviews, and group discussions.
+          </p>
+        </div>
+        <button onClick={() => setShowModal(true)} className={button}>
+          <Building2 className="mr-2 size-4" /> New Preparation Path
+        </button>
+      </section>
+
+      {/* Plans Navigation Bar */}
+      {plans.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto border-b border-border pb-3">
+          {plans.map((p) => {
+            const name = p.customCompanyName || p.company?.name || 'Target Company'
+            const isSel = p.id === activePlan?.id
+            return (
+              <button
+                key={p.id}
+                onClick={() => setSelectedPlanId(p.id)}
+                className={`flex shrink-0 items-center gap-2.5 rounded-lg border px-3.5 py-2 text-sm font-semibold transition ${
+                  isSel
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border bg-card text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                <Building2 className="size-4" />
+                <span>{name}</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold">
+                  {p.targetRoleSlug.replace('-', ' ')}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center p-12 text-sm text-muted-foreground">
+          <Loader2 className="mr-2 size-5 animate-spin text-primary" /> Loading company preparation plans…
+        </div>
+      ) : !activePlan ? (
+        /* Empty State */
+        <div className={`${card} p-12 text-center`}>
+          <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Building2 className="size-7" />
+          </div>
+          <h2 className="mt-4 text-xl font-semibold">No Company Preparation Path Selected</h2>
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+            Select a target company like TCS, Infosys, Amazon, Google, or enter your target startup to generate a 12-stage customized preparation roadmap.
+          </p>
+          <button onClick={() => setShowModal(true)} className={`${button} mt-6`}>
+            <Building2 className="mr-2 size-4" /> Start Company Preparation
+          </button>
+        </div>
+      ) : (
+        /* Active Plan View */
+        <div className="flex flex-col gap-8">
+          {/* Company Overview & Readiness Card */}
+          <div className="grid gap-6 lg:grid-cols-3">
+            {/* Main Info */}
+            <div className={`${card} p-6 lg:col-span-2 flex flex-col justify-between`}>
+              <div>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold text-lg">
+                      {(activePlan.customCompanyName || activePlan.company?.name || 'C')[0]}
+                    </span>
+                    <div>
+                      <h2 className="text-xl font-semibold">
+                        {activePlan.customCompanyName || activePlan.company?.name || 'Custom Target Company'}
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        {activePlan.company?.industry || 'Technology & Software'} • {activePlan.targetRoleSlug.toUpperCase()} ({activePlan.experienceLevel})
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-bold ${
+                      planData.dataSourceType === 'VERIFIED'
+                        ? 'bg-emerald-500/10 text-emerald-500'
+                        : 'bg-amber-500/10 text-amber-500'
+                    }`}
+                  >
+                    {planData.dataSourceType || 'COMMONLY_REPORTED'}
+                  </span>
+                </div>
+                <p className="mt-4 text-xs italic text-muted-foreground border-l-2 border-primary/40 pl-3 py-1">
+                  &ldquo;{metrics.confidenceDisclaimer || 'General preparation guidance for this company and role. Actual hiring processes vary.'}&rdquo;
+                </p>
+
+                {/* Company Focus Areas */}
+                <div className="mt-6">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Company Priority Focus Areas</h3>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {focusAreas.map((fa: any, idx: number) => (
+                      <span key={idx} className="rounded-md border border-border bg-muted/50 px-2.5 py-1 text-xs font-medium">
+                        {fa.skillName} <span className="ml-1 font-bold text-primary">({fa.confidence || 'COMMONLY_REPORTED'})</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-between border-t border-border pt-4 text-xs text-muted-foreground">
+                <span>Stage {activePlan.currentStage} of 12</span>
+                <button
+                  onClick={() => handleAdvanceStage(activePlan.id, activePlan.currentStage)}
+                  className="font-semibold text-primary hover:underline flex items-center gap-1"
+                >
+                  Advance to Stage {Math.min(12, activePlan.currentStage + 1)} <ArrowRight className="size-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Evidence-Based Readiness Gauge */}
+            <div className={`${card} p-6 flex flex-col justify-between`}>
+              <div>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm">Company Readiness</h3>
+                  <Target className="size-4 text-primary" />
+                </div>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-4xl font-bold tracking-tight">
+                    {activePlan.readinessScore !== null ? `${activePlan.readinessScore}%` : 'N/A'}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {activePlan.readinessScore !== null ? 'Evidence-based' : 'Not enough data yet'}
+                  </span>
+                </div>
+                <ProgressBar value={activePlan.readinessScore || 15} />
+
+                {/* Missing evidence list */}
+                <div className="mt-4 flex flex-col gap-1.5 text-xs">
+                  {metrics.missingEvidence && metrics.missingEvidence.length > 0 ? (
+                    metrics.missingEvidence.map((ev: string, idx: number) => (
+                      <div key={idx} className="flex items-center gap-2 text-amber-500">
+                        <AlertCircle className="size-3.5 shrink-0" />
+                        <span className="truncate">{ev}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex items-center gap-2 text-emerald-500">
+                      <CheckCircle2 className="size-3.5 shrink-0" />
+                      <span>Sufficient evidence collected across all dimensions</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2 text-center text-xs border-t border-border pt-4">
+                <div className="rounded-lg bg-muted p-2">
+                  <span className="block font-bold">{metrics.quizAccuracyAvg || 0}%</span>
+                  <span className="text-[10px] text-muted-foreground">Quiz Accuracy</span>
+                </div>
+                <div className="rounded-lg bg-muted p-2">
+                  <span className="block font-bold">{metrics.codingAcceptanceCount || 0} Solved</span>
+                  <span className="text-[10px] text-muted-foreground">Coding</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 12-Stage Interactive Roadmap */}
+          <section className={`${card} p-6`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-lg">12-Stage Company Preparation Roadmap</h2>
+                <p className="text-xs text-muted-foreground">Sequential path tailored to {activePlan.customCompanyName || activePlan.company?.name || 'Company'} & {activePlan.targetRoleSlug}</p>
+              </div>
+              <span className="text-xs font-semibold text-primary">
+                {stages.filter((s: any) => s.isCompleted).length} / 12 Completed
+              </span>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-4">
+              {stages.map((stg: any) => {
+                const isCurrent = stg.stageNumber === activePlan.currentStage
+                const isCompleted = stg.isCompleted || stg.stageNumber < activePlan.currentStage
+
+                return (
+                  <div
+                    key={stg.stageNumber}
+                    className={`rounded-xl border p-4 transition ${
+                      isCurrent
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                        : isCompleted
+                        ? 'border-border bg-card opacity-90'
+                        : 'border-border/60 bg-muted/30 opacity-70'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3.5">
+                        <span
+                          className={`flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                            isCompleted
+                              ? 'bg-emerald-500 text-white'
+                              : isCurrent
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted text-muted-foreground'
+                          }`}
+                        >
+                          {isCompleted ? <Check className="size-4" /> : stg.stageNumber}
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-sm">{stg.title}</h3>
+                            <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+                              {stg.category}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">{stg.description}</p>
+
+                          {/* Recommended Actions */}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {stg.recommendedActions?.map((act: string, aIdx: number) => (
+                              <span key={aIdx} className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground/80 bg-background border border-border rounded px-2 py-0.5">
+                                • {act}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action Links */}
+                      <div className="flex shrink-0 flex-col gap-1.5 items-end">
+                        {stg.category === 'APTITUDE' && (
+                          <Link href="/quizzes" className={`${button} py-1 px-3 text-xs`}>
+                            <BrainCircuit className="size-3.5 mr-1" /> Practice Aptitude
+                          </Link>
+                        )}
+                        {stg.category === 'CORE_CS' && (
+                          <Link href="/preparation" className={`${outlineButton} py-1 px-3 text-xs`}>
+                            <BookOpen className="size-3.5 mr-1" /> Core CS Topics
+                          </Link>
+                        )}
+                        {stg.category === 'CODING' && (
+                          <Link href="/coding" className={`${button} py-1 px-3 text-xs`}>
+                            <Code2 className="size-3.5 mr-1" /> Coding Engine
+                          </Link>
+                        )}
+                        {stg.category === 'TUTOR' && (
+                          <Link href="/tutor" className={`${outlineButton} py-1 px-3 text-xs`}>
+                            <MessageSquareText className="size-3.5 mr-1" /> Launch AI Tutor
+                          </Link>
+                        )}
+                        {stg.category === 'INTERVIEW' && (
+                          <Link href="/interview" className={`${button} py-1 px-3 text-xs`}>
+                            <Video className="size-3.5 mr-1" /> Mock Interview
+                          </Link>
+                        )}
+                        {stg.category === 'GD' && (
+                          <Link href="/gd" className={`${outlineButton} py-1 px-3 text-xs`}>
+                            <Users className="size-3.5 mr-1" /> Group Discussion
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Company Selection Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-2xl flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <div>
+                <h2 className="text-xl font-semibold">Create Company Preparation Path</h2>
+                <p className="text-xs text-muted-foreground">Select target company, role, and experience level</p>
+              </div>
+              <button onClick={() => setShowModal(false)} className="rounded-lg p-1 hover:bg-accent">
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {/* Company Search & Selection */}
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">1. Select Target Company</label>
+              <div className="relative mt-2">
+                <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search catalog (TCS, Infosys, Amazon, Google...)"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-48 overflow-y-auto p-1">
+                {filteredCatalog.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCompanyId(c.id)
+                      setCustomCompanyName('')
+                    }}
+                    className={`flex flex-col text-left rounded-lg border p-3 transition ${
+                      selectedCompanyId === c.id
+                        ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                        : 'border-border bg-background hover:border-primary/50'
+                    }`}
+                  >
+                    <span className="font-semibold text-xs truncate">{c.name}</span>
+                    <span className="text-[10px] text-muted-foreground truncate">{c.industry}</span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setSelectedCompanyId('custom')}
+                  className={`flex flex-col text-left rounded-lg border p-3 transition ${
+                    selectedCompanyId === 'custom'
+                      ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                      : 'border-border bg-background hover:border-primary/50'
+                  }`}
+                >
+                  <span className="font-semibold text-xs text-primary">+ Other Company</span>
+                  <span className="text-[10px] text-muted-foreground">General Guidance Mode</span>
+                </button>
+              </div>
+
+              {selectedCompanyId === 'custom' && (
+                <div className="mt-3">
+                  <input
+                    type="text"
+                    placeholder="Enter custom company name (e.g. Acme Tech)"
+                    value={customCompanyName}
+                    onChange={(e) => setCustomCompanyName(e.target.value)}
+                    maxLength={60}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Target Role & Experience */}
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">2. Target Role</label>
+                <select
+                  value={targetRoleSlug}
+                  onChange={(e) => setTargetRoleSlug(e.target.value)}
+                  className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {AVAILABLE_ROLES.map((r) => (
+                    <option key={r.slug} value={r.slug}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">3. Experience Level</label>
+                <select
+                  value={experienceLevel}
+                  onChange={(e) => setExperienceLevel(e.target.value)}
+                  className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="STUDENT">College Student</option>
+                  <option value="FRESHER">Fresher (0-1 yrs)</option>
+                  <option value="ENTRY_LEVEL">Entry Level (1-2 yrs)</option>
+                  <option value="EXPERIENCED">Experienced (3+ yrs)</option>
+                  <option value="CAREER_SWITCHER">Career Switcher</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Preparation Goal */}
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">4. Preparation Goal (Optional)</label>
+              <input
+                type="text"
+                placeholder="e.g. Preparing for upcoming campus drive or off-campus assessment"
+                value={preparationGoal}
+                onChange={(e) => setPreparationGoal(e.target.value)}
+                maxLength={200}
+                className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+              <button type="button" onClick={() => setShowModal(false)} className={outlineButton}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleCreatePlan}
+                className={button}
+              >
+                {submitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Sparkles className="mr-2 size-4" />}
+                Generate Preparation Path
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function IntervueApp() {
   const pathname = usePathname()
   const router = useRouter()
@@ -4973,10 +6462,12 @@ export default function IntervueApp() {
   const page =
     pathname === '/preparation' ? <Preparation /> :
     pathname === '/role-prep'   ? <RolePreparationView /> :
+    pathname === '/company-prep'? <CompanyPrepView /> :
     pathname === '/tutor'       ? <Tutor /> :
     pathname === '/quizzes'     ? <Quizzes /> :
     pathname === '/coding'      ? <Coding /> :
     pathname === '/interview'   ? <Interview /> :
+    pathname === '/gd'          ? <GroupDiscussion /> :
     pathname === '/analytics'   ? <Analytics /> :
     pathname === '/profile'     ? <Profile /> :
     <Dashboard />

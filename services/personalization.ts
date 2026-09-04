@@ -660,6 +660,18 @@ function buildAdaptiveRecommendations(
     })
   }
 
+  // Company preparation recommendation
+  recs.push({
+    id: 'rec-p18-company-prep',
+    category: 'general',
+    title: 'Create a Company-Wise Preparation Path',
+    description: 'Target specific companies like TCS, Infosys, Amazon, or custom target companies with tailored aptitude, DSA, interview, and GD practice stages.',
+    evidence: 'Company-wise preparation engine available.',
+    actionText: 'Explore Company Prep',
+    actionHref: '/company-prep',
+    priority: 'medium',
+  })
+
   // No tutor usage
   if (tutor.totalSessions === 0) {
     recs.push({

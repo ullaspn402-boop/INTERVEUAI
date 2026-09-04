@@ -21,10 +21,11 @@ const nextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           // Limit referrer information sent to external sites
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          // Disable browser features not used by the app
+          // Allow camera and microphone for same-origin only (needed for AI Interview and GD).
+          // Other sensitive capabilities remain blocked.
           {
             key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=(), payment=()',
+            value: 'camera=(self), microphone=(self), geolocation=(), payment=()',
           },
           // Content Security Policy
           // Allows: same-origin scripts/styles, Google Fonts, Vercel Analytics

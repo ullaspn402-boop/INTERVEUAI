@@ -176,6 +176,20 @@ export const SendTutorMessageSchema = z.object({
     .trim()
     .min(1, 'Message cannot be empty')
     .max(8000, 'Message exceeds 8,000 character limit'),
+  mode: z
+    .enum([
+      'LEARN',
+      'ASK_DOUBT',
+      'PRACTICE',
+      'INTERVIEW_PREP',
+      'CODING_HELP',
+      'EXPLAIN_MISTAKE',
+      'ROLE_PREP',
+      'HINT',
+      'REVISION',
+      'ROLE_READINESS',
+    ])
+    .optional(),
 })
 
 export type SendTutorMessageInput = z.infer<typeof SendTutorMessageSchema>
@@ -272,4 +286,66 @@ export const ResendVerificationSchema = z.object({
 
 export type ResendVerificationInput = z.infer<typeof ResendVerificationSchema>
 
+// ─── Group Discussion Validation ──────────────────────────────────────────────
+
+export const CreateGDSessionSchema = z.object({
+  topic: z.string().trim().max(300).optional(),
+  targetRole: z.string().trim().max(200).optional(),
+  participantCount: z.coerce.number().int().min(2).max(4).default(3),
+  totalRounds: z.coerce.number().int().min(3).max(8).default(5),
+})
+
+export type CreateGDSessionInput = z.infer<typeof CreateGDSessionSchema>
+
+export const SubmitGDContributionSchema = z.object({
+  contributionText: z
+    .string()
+    .trim()
+    .min(10, 'Contribution must be at least 10 characters')
+    .max(2000, 'Contribution exceeds 2,000 character limit'),
+})
+
+export type SubmitGDContributionInput = z.infer<typeof SubmitGDContributionSchema>
+
+export const GDSessionQuerySchema = z.object({
+  status: z.enum(['WAITING', 'INTRO', 'IN_PROGRESS', 'CLOSING', 'COMPLETED', 'ABANDONED']).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(10),
+})
+
+export type GDSessionQueryInput = z.infer<typeof GDSessionQuerySchema>
+
+// ─── Company Preparation Validation ──────────────────────────────────────────
+
+export const ExperienceLevelEnum = z.enum([
+  'STUDENT',
+  'FRESHER',
+  'ENTRY_LEVEL',
+  'EXPERIENCED',
+  'CAREER_SWITCHER',
+])
+
+export const CreateCompanyPlanSchema = z.object({
+  companyId: z.string().trim().max(128).optional(),
+  customCompanyName: z.string().trim().max(60, 'Company name must be 60 characters or fewer').optional(),
+  targetRoleSlug: z.string().trim().min(1, 'Target role is required').max(100),
+  experienceLevel: ExperienceLevelEnum.default('FRESHER'),
+  preparationGoal: z.string().trim().max(200, 'Preparation goal must be 200 characters or fewer').optional(),
+})
+
+export type CreateCompanyPlanInput = z.infer<typeof CreateCompanyPlanSchema>
+
+export const UpdateCompanyPlanSchema = z.object({
+  status: z.enum(['ACTIVE', 'COMPLETED', 'PAUSED', 'ABANDONED']).optional(),
+  currentStage: z.coerce.number().int().min(1).max(12).optional(),
+})
+
+export type UpdateCompanyPlanInput = z.infer<typeof UpdateCompanyPlanSchema>
+
+export const CompanyQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  industry: z.string().trim().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+})
+
+export type CompanyQueryInput = z.infer<typeof CompanyQuerySchema>
 
