@@ -261,13 +261,13 @@ function computeSubjectPriority(sp: UserAnalyticsOverview['subjectProgress'][num
     score >= 60 ? 'high' : score >= 35 ? 'medium' : 'low'
 
   let recommendedAction = 'Continue studying topics'
-  let actionHref = '/preparation'
+  let actionHref = sp.subjectId ? `/tutor?subjectId=${sp.subjectId}&mode=LEARN` : '/tutor?mode=LEARN'
   if (sp.value < 30) {
     recommendedAction = 'Start with fundamentals'
-    actionHref = '/preparation'
+    actionHref = sp.subjectId ? `/tutor?subjectId=${sp.subjectId}&mode=LEARN` : '/tutor?mode=LEARN'
   } else if (sp.quizScorePct === null || sp.quizScorePct < 60) {
     recommendedAction = 'Take a subject quiz'
-    actionHref = '/quizzes'
+    actionHref = sp.slug ? `/quizzes?subject=${sp.slug}` : '/quizzes'
   } else if (sp.codingSolvedCount === 0) {
     recommendedAction = 'Attempt a coding problem'
     actionHref = '/coding'
@@ -420,7 +420,7 @@ async function computeTopicPriority(
       priority,
       reason,
       recommendedAction,
-      actionHref: '/preparation',
+      actionHref: `/tutor?subjectId=${topic.subjectId}&topicId=${topic.id}&mode=LEARN`,
     })
   }
 
@@ -449,6 +449,8 @@ function buildLearningPath(
   // Step 1: Resume in-progress topics first
   const inProgressTopics = topicPriority.filter((t) => t.status === 'IN_PROGRESS').slice(0, 2)
   for (const topic of inProgressTopics) {
+    const matchedSub = subjectPriority.find(s => s.slug === topic.subjectSlug)
+    const subParam = matchedSub?.subjectId ? `subjectId=${matchedSub.subjectId}&` : ''
     path.push({
       order: order++,
       type: 'subject_study',
@@ -459,7 +461,7 @@ function buildLearningPath(
       effort: 'low',
       priority: 'high',
       actionText: 'Continue topic',
-      actionHref: '/preparation',
+      actionHref: `/tutor?${subParam}topicId=${topic.topicId}&mode=LEARN`,
     })
   }
 
@@ -476,7 +478,7 @@ function buildLearningPath(
         effort: 'high',
         priority: 'high',
         actionText: `Study ${sub.title}`,
-        actionHref: '/preparation',
+        actionHref: sub.subjectId ? `/tutor?subjectId=${sub.subjectId}&mode=LEARN` : '/tutor?mode=LEARN',
       })
     } else if (sub.progressPct >= 30) {
       path.push({
@@ -552,7 +554,7 @@ function buildLearningPath(
       effort: 'medium',
       priority: 'medium',
       actionText: `Study ${sub.title}`,
-      actionHref: '/preparation',
+      actionHref: sub.subjectId ? `/tutor?subjectId=${sub.subjectId}&mode=LEARN` : '/tutor?mode=LEARN',
     })
   }
 
@@ -591,7 +593,7 @@ function buildAdaptiveRecommendations(
       description: `Your quiz accuracy is ${quizzes.accuracyPct}%. Revisiting core concepts before retaking quizzes will improve your score.`,
       evidence: `${quizzes.accuracyPct}% quiz accuracy across ${quizzes.completedAttempts} completed attempts.`,
       actionText: 'Study topics',
-      actionHref: '/preparation',
+      actionHref: weakSubj?.subjectId ? `/tutor?subjectId=${weakSubj.subjectId}&mode=LEARN` : '/tutor?mode=LEARN',
       priority: 'high',
     })
   }

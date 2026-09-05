@@ -247,6 +247,7 @@ function Dashboard() {
 function Preparation() {
   const router = useRouter()
   const [profile, setProfile] = useState<any>(null)
+  const [rawSubjects, setRawSubjects] = useState<Array<{ id: string; name: string; shortTitle: string; slug: string }>>([])
   const [realSubjects, setRealSubjects] = useState<Array<{ title: string; full: string; value: number; detail: string; nextTopicName: string; icon: React.ElementType }> | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -261,11 +262,12 @@ function Preparation() {
           setProfile(persData)
         }
         if (subData?.subjects) {
+          setRawSubjects(subData.subjects)
           type ProgItem = { slug: string; value: number; detail: string; nextTopicName: string }
           const progList: ProgItem[] = progData?.progress ?? []
           const progMap = new Map<string, ProgItem>(progList.map((p) => [p.slug, p]))
 
-          const formatted = subData.subjects.map((s: { name: string; shortTitle: string; slug: string; topicCount: number }) => {
+          const formatted = subData.subjects.map((s: { id: string; name: string; shortTitle: string; slug: string; topicCount: number }) => {
             const prog = progMap.get(s.slug)
             return {
               title: s.shortTitle,
@@ -297,7 +299,8 @@ function Preparation() {
         description="Your personalized preparation curriculum, dynamically prioritized based on your real performance."
         action="Resume Learning"
         onAction={() => {
-          if (nextStep?.actionHref) router.push(nextStep.actionHref)
+          const href = nextStep?.actionHref && nextStep.actionHref !== '/preparation' ? nextStep.actionHref : '/tutor?mode=LEARN'
+          router.push(href)
         }}
       />
 
@@ -351,7 +354,7 @@ function Preparation() {
                 <h2 className="mt-1 font-semibold text-lg">{nextStep.title}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">{nextStep.description}</p>
               </div>
-              <Link href={nextStep.actionHref || '/preparation'} className={button}>
+              <Link href={nextStep.actionHref && nextStep.actionHref !== '/preparation' ? nextStep.actionHref : '/tutor?mode=LEARN'} className={button}>
                 {nextStep.actionText || 'Start Now'} <ArrowRight className="size-4" />
               </Link>
             </section>
@@ -451,7 +454,23 @@ function Preparation() {
               <p className="mt-1 text-sm text-muted-foreground">{detail} complete</p>
               <div className="mt-4"><ProgressBar value={value} /></div>
               <p className="mt-3 text-xs text-muted-foreground">Next: {nextTopicName}</p>
-              <button onClick={() => router.push(title === 'SQL' ? '/coding' : '/quizzes')} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary">Continue <ArrowRight className="size-4" /></button>
+              <button
+                onClick={() => {
+                  if (title === 'SQL') {
+                    router.push('/coding')
+                  } else {
+                    const match = rawSubjects.find((s) => s.shortTitle === title || s.name === full)
+                    if (match) {
+                      router.push(`/tutor?subjectId=${match.id}&mode=LEARN`)
+                    } else {
+                      router.push('/tutor?mode=LEARN')
+                    }
+                  }
+                }}
+                className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary"
+              >
+                Continue <ArrowRight className="size-4" />
+              </button>
             </div>
           ))}
         </div>
@@ -815,11 +834,9 @@ function Tutor() {
         if (!overrideText) setInput(rawContent)
         setLastFailedMessage({ content: rawContent, mode: targetMode })
 
-        if (r.status === 503 || r.status === 429) {
-          setChatError('The AI tutor is temporarily busy. Your progress has been saved. Please click Retry.')
+        setChatError(d.error || 'Failed to send message. Please click Retry.')
+        if (r.status === 503) {
           setAiAvailable(false)
-        } else {
-          setChatError(d.error || 'Failed to send message.')
         }
         return
       }

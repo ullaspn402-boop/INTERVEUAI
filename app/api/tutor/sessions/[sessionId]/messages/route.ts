@@ -81,14 +81,14 @@ export async function POST(
     }
     if (result.error === 'configuration_error') {
       return NextResponse.json(
-        { error: 'AI service is not configured. Please contact support.' },
+        { error: result.message || 'AI service is not configured. OPENAI_API_KEY is missing.' },
         { status: 503 }
       )
     }
     if (result.error === 'rate_limit') {
       return NextResponse.json(
-        { error: 'AI service is temporarily rate-limited. Please try again in a moment.' },
-        { status: 503 }
+        { error: result.message || 'AI service is temporarily rate-limited. Please try again in a moment.' },
+        { status: 429 }
       )
     }
 

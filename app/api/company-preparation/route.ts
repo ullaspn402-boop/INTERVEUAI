@@ -44,6 +44,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ plan }, { status: 201 })
   } catch (error) {
     console.error('Error creating company plan:', error)
-    return NextResponse.json({ error: 'Failed to create company preparation plan' }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to create company preparation plan' },
+      { status: 500 }
+    )
   }
 }

@@ -192,7 +192,7 @@ export async function createCompanyPlan(userId: string, input: CreateCompanyPlan
   ])
 
   // Extract resume evidence
-  const rawSkills: string[] = userResume?.rawSkills ? (userResume.rawSkills as string[]) : []
+  const rawSkills: string[] = Array.isArray(userResume?.rawSkills) ? (userResume.rawSkills as string[]) : []
   const hasResume = !!userResume
 
   // Analyze performance
@@ -474,6 +474,15 @@ export async function updateCompanyPlan(userId: string, planId: string, input: U
     updateData.currentStage = input.currentStage
     if (input.currentStage >= 12 && existing.status === 'ACTIVE') {
       updateData.status = 'COMPLETED'
+    }
+
+    if (existing.planData && typeof existing.planData === 'object' && Array.isArray((existing.planData as any).stages)) {
+      const planDataObj = JSON.parse(JSON.stringify(existing.planData))
+      planDataObj.stages = planDataObj.stages.map((s: any) => ({
+        ...s,
+        isCompleted: s.stageNumber <= input.currentStage!,
+      }))
+      updateData.planData = planDataObj
     }
   }
 
