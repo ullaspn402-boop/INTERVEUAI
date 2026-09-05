@@ -57,11 +57,12 @@ export function checkGDRateLimit(userId: string): { allowed: boolean; retryAfter
 
 // ─── AI Participant Personas ──────────────────────────────────────────────────
 
-const AI_PERSONAS = [
-  { name: 'Arjun', persona: 'Analyst', avatarSeed: 'analyst-arjun' },
-  { name: 'Priya', persona: "Devil's Advocate", avatarSeed: 'devil-priya' },
-  { name: 'Rahul', persona: 'Synthesizer', avatarSeed: 'synth-rahul' },
-  { name: 'Anika', persona: 'Pragmatist', avatarSeed: 'prag-anika' },
+export const AI_PERSONAS = [
+  { name: 'Rahul', persona: 'Confident', avatarSeed: 'confident-rahul' },
+  { name: 'Ananya', persona: 'Analytical', avatarSeed: 'analytical-ananya' },
+  { name: 'Vikram', persona: 'Opposing', avatarSeed: 'opposing-vikram' },
+  { name: 'Priya', persona: 'Balanced', avatarSeed: 'balanced-priya' },
+  { name: 'Rohan', persona: 'Quiet', avatarSeed: 'quiet-rohan' },
 ]
 
 // ─── Create GD Session ────────────────────────────────────────────────────────
@@ -83,7 +84,7 @@ export async function createGDSession(
     where: { userId },
     select: { topic: true },
     orderBy: { createdAt: 'desc' },
-    take: 5,
+    take: 8,
   })
   const existingTopics = recentSessions.map((s) => s.topic)
 
@@ -103,8 +104,9 @@ export async function createGDSession(
     topicContext = topicResult.data.topicContext
   }
 
-  const participantCount = Math.min(4, Math.max(2, opts.participantCount ?? 3))
-  const totalRounds = Math.min(8, Math.max(3, opts.totalRounds ?? 5))
+  const participantCount = Math.min(6, Math.max(2, opts.participantCount ?? 4))
+  const totalRounds = Math.min(8, Math.max(1, opts.totalRounds ?? 5))
+  const mode = opts.mode || 'AI_GD'
 
   // Select AI personas (shuffle for variety)
   const shuffled = [...AI_PERSONAS].sort(() => Math.random() - 0.5)
@@ -114,7 +116,7 @@ export async function createGDSession(
   const allParticipantNames = [opts.userName, ...selectedPersonas.map((p) => p.name)]
   const openingResult = await generateGDOpeningAI({
     topic,
-    topicContext,
+    topicContext: `${topicContext} [Mode: ${mode}]`,
     participantNames: allParticipantNames,
     totalRounds,
   })

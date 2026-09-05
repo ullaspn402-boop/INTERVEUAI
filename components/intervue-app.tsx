@@ -8,8 +8,9 @@ import {
   Home, LineChart, Menu, MessageSquareText, Mic, MicOff, Moon, Play, Search, Settings2, Sparkles,
   Sun, Target, Trophy, UserRound, Video, VideoOff, PhoneOff, X, Camera, Clock3, RotateCcw, Send, SlidersHorizontal,
   CheckCircle2, Circle, AlertCircle, Lightbulb, LogOut, Eye, EyeOff, Loader2, History as HistoryIcon,
-  Bot, Volume2, VolumeX, Users, Building2, Briefcase
+  Bot, Volume2, VolumeX, Users, Building2, Briefcase, Radio, Sparkles as SparklesIcon, Award, Star, Timer
 } from 'lucide-react'
+import { getRandomGDTopic, GD_TOPIC_POOL } from '@/lib/gd-topics'
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: Home },
@@ -39,7 +40,7 @@ const card = 'rounded-xl border border-border bg-card'
 
 function Brand() { return <Link href="/dashboard" className="flex items-center gap-2.5 font-semibold tracking-tight"><span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground"><Sparkles className="size-4" /></span><span>INTERVUE <span className="text-primary">AI</span></span></Link> }
 function IconButton({ children, label, onClick }: { children: React.ReactNode; label: string; onClick?: () => void }) { return <button aria-label={label} onClick={onClick} className="grid size-9 place-items-center rounded-lg border border-border text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{children}</button> }
-function Sidebar({ mobileOpen, close }: { mobileOpen: boolean; close: () => void }) { const pathname = usePathname(); return <aside className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-border bg-card px-3 py-5 transition-transform lg:static lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}><div className="flex items-center justify-between px-2"><Brand /><button className="lg:hidden" onClick={close} aria-label="Close navigation"><X className="size-5" /></button></div><nav className="mt-10 flex flex-col gap-1" aria-label="Main navigation"><p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[.14em] text-muted-foreground">Workspace</p>{nav.map(({ href, label, icon: Icon }) => <Link key={href} onClick={close} href={href} aria-current={pathname === href ? 'page' : undefined} className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${pathname === href ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}><Icon className="size-[17px]" />{label}</Link>)}</nav><div className="mt-auto flex flex-col gap-1"><Link href="/profile" onClick={close} className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"><Settings2 className="size-[17px]" />Settings</Link><div className="mt-4 rounded-xl bg-muted p-4"><div className="flex items-center justify-between"><span className="text-xs font-semibold">Weekly goal</span><Flame className="size-4 text-primary" /></div><p className="mt-2 text-xs leading-5 text-muted-foreground">Keep your momentum going.</p><ProgressBar value={80} /><p className="mt-2 text-xs text-muted-foreground">4 of 5 sessions</p></div></div></aside> }
+function Sidebar({ mobileOpen, close }: { mobileOpen: boolean; close: () => void }) { const pathname = usePathname(); return <aside className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-border bg-card px-3 py-5 transition-transform lg:static lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}><div className="flex items-center justify-between px-2"><Brand /><button className="lg:hidden" onClick={close} aria-label="Close navigation"><X className="size-5" /></button></div><nav className="mt-10 flex flex-col gap-1" aria-label="Main navigation"><p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[.14em] text-muted-foreground">Workspace</p>{nav.map(({ href, label, icon: Icon }) => <Link key={href} onClick={close} href={href} aria-current={pathname === href ? 'page' : undefined} className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${pathname === href ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}><Icon className="size-[17px]" />{label}</Link>)}</nav><div className="mt-auto flex flex-col gap-1"><Link href="/profile" onClick={close} className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"><Settings2 className="size-[17px]" />Settings</Link><div className="mt-4 rounded-xl bg-primary/5 border border-primary/15 p-4"><span className="text-xs font-semibold">Quick start</span><div className="mt-3 flex flex-col gap-1.5"><Link href="/interview" onClick={close} className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1.5 transition"><Video className="size-3" />AI Interview</Link><Link href="/tutor" onClick={close} className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1.5 transition"><MessageSquareText className="size-3" />AI Tutor</Link><Link href="/gd" onClick={close} className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1.5 transition"><Users className="size-3" />Group Discussion</Link><Link href="/company-prep" onClick={close} className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1.5 transition"><Building2 className="size-3" />Company Prep</Link></div></div></div></aside> }
 function Topbar({ open, dark, toggleTheme, user, onLogout }: { open: () => void; dark: boolean; toggleTheme: () => void; user: { name: string; initials: string } | null; onLogout: () => void }) {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
   const initials = user?.initials ?? ''
@@ -487,12 +488,31 @@ function Tutor() {
   // ── Mode selection state ──
   const [selectedMode, setSelectedMode] = useState<string>('LEARN')
 
-  // ── Chat state ──
+  // ── Chat state & Synchronous Guard Refs ──
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const sendingRef = useRef(false)
+  const initRef = useRef(false)
+
   const [chatError, setChatError] = useState<string | null>(null)
   const [lastFailedMessage, setLastFailedMessage] = useState<{ content: string; mode?: string } | null>(null)
   const [loadingSession, setLoadingSession] = useState(false)
+
+  // ── Voice Input & Output States ──
+  const [isListening, setIsListening] = useState(false)
+  const recognitionRef = useRef<any>(null)
+
+  // ── Learning Summary Modal State ──
+  const [showSummaryModal, setShowSummaryModal] = useState(false)
+  const [loadingSummary, setLoadingSummary] = useState(false)
+  const [sessionSummary, setSessionSummary] = useState<{
+    score: number
+    topicsCovered: string[]
+    conceptsMastered: string[]
+    conceptsNeedingPractice: string[]
+    commonMistakes: string[]
+    recommendedNextTopic: string
+  } | null>(null)
 
   // ── AI status ──
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null)
@@ -507,13 +527,16 @@ function Tutor() {
     { id: 'INTERVIEW_PREP', label: '🎙️ Interview Prep', description: 'Simulated technical placement interview questions' },
     { id: 'CODING_HELP', label: '💻 Coding Help', description: 'DSA logic & algorithm debugging guidance' },
     { id: 'EXPLAIN_MISTAKE', label: '🔍 Explain Mistake', description: 'Analyze why an answer is wrong with correct logic' },
+    { id: 'HINT', label: '💡 Socratic Hint', description: 'Guiding hint to reason through a problem without answer dumps' },
     { id: 'ROLE_PREP', label: '🚀 Role Prep', description: 'Target role skill alignment and preparation guidance' },
   ]
 
-  // ── Load sessions on mount & auto-create context-aware session if params exist ──
+  // ── Load sessions on mount with initRef guard against StrictMode double runs ──
   useEffect(() => {
+    if (initRef.current) return
+    initRef.current = true
+
     async function initTutor() {
-      // Parse URL search params if present
       let paramSubjectId: string | null = null
       let paramTopicId: string | null = null
       let paramMode: string | null = null
@@ -537,18 +560,15 @@ function Tutor() {
           setSessions(sessList)
 
           if (paramSubjectId) {
-            // Find existing session matching subject/topic if available
             const matching = sessList.find((s: any) => s.subject?.id === paramSubjectId && (!paramTopicId || s.topic?.id === paramTopicId))
             if (matching) {
               await loadSession(matching.id)
             } else {
-              // Auto-create session with URL subject/topic context
               await handleCreateSessionWithContext({ subjectId: paramSubjectId, topicId: paramTopicId || undefined })
             }
           } else if (sessList.length > 0) {
             await loadSession(sessList[0].id)
           } else {
-            // Auto-create initial default session for new users
             await handleCreateSessionSilent()
           }
         }
@@ -569,6 +589,77 @@ function Tutor() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // ── Adaptive Difficulty Computation ──
+  const computedAdaptiveState = useMemo(() => {
+    const assistant = messages.filter(m => m.role === 'ASSISTANT')
+    let correct = 0
+    let incorrect = 0
+    for (const m of assistant) {
+      const l = m.content.toLowerCase()
+      if (l.includes('correct') && !l.includes('incorrect') && !l.includes('not correct')) correct++
+      if (l.includes('incorrect') || l.includes('misconception') || l.includes('almost')) incorrect++
+    }
+    if (correct >= 4 && incorrect <= 1) {
+      return { level: 'Advanced', emoji: '🔥', style: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20' }
+    }
+    if (correct >= 2) {
+      return { level: 'Intermediate', emoji: '⚡', style: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' }
+    }
+    return { level: 'Beginner', emoji: '🌱', style: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' }
+  }, [messages])
+
+  // ── Speech-to-Text Microphone Recording ──
+  const toggleMic = () => {
+    if (typeof window === 'undefined') return
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      setChatError('Speech recognition is not supported in this browser. You can type your message.')
+      return
+    }
+
+    if (isListening && recognitionRef.current) {
+      try { recognitionRef.current.stop() } catch {}
+      setIsListening(false)
+      return
+    }
+
+    try {
+      const rec = new SpeechRecognition()
+      rec.continuous = false
+      rec.interimResults = true
+      rec.lang = 'en-US'
+
+      rec.onstart = () => setIsListening(true)
+      rec.onresult = (e: any) => {
+        let transcript = ''
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          transcript += e.results[i][0].transcript
+        }
+        if (transcript.trim()) {
+          setInput(transcript)
+        }
+      }
+      rec.onerror = () => setIsListening(false)
+      rec.onend = () => setIsListening(false)
+
+      rec.start()
+      recognitionRef.current = rec
+    } catch {
+      setIsListening(false)
+    }
+  }
+
+  // ── Text-to-Speech Read Aloud ──
+  const readAloud = (text: string) => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+      const clean = text.replace(/^\[MODE:[A-Z_]+\]\s*/, '').replace(/[\*\_`#]/g, '')
+      const utterance = new SpeechSynthesisUtterance(clean)
+      utterance.rate = 1.0
+      window.speechSynthesis.speak(utterance)
+    }
+  }
 
   // ── Silent initial session creation ──
   async function handleCreateSessionSilent(): Promise<string | null> {
@@ -631,6 +722,24 @@ function Tutor() {
     }
   }
 
+  // ── Fetch Session Summary Report ──
+  const handleOpenSummary = async () => {
+    if (!activeSessionId) return
+    setLoadingSummary(true)
+    setShowSummaryModal(true)
+    try {
+      const r = await fetch(`/api/tutor/sessions/${activeSessionId}/summary`)
+      if (r.ok) {
+        const d = await r.json()
+        setSessionSummary(d.summary)
+      }
+    } catch (err) {
+      console.error('Failed to load session summary:', err)
+    } finally {
+      setLoadingSummary(false)
+    }
+  }
+
   // ── Create new session from UI modal ──
   async function handleCreateSession() {
     setCreating(true)
@@ -661,11 +770,18 @@ function Tutor() {
     }
   }
 
-  // ── Send message ──
+  // ── Send message with sendingRef guard against race conditions & double clicks ──
   async function sendMessage(overrideText?: string, modeOverride?: string) {
     const rawContent = (overrideText || input).trim()
-    if (!rawContent || sending) return
+
+    if (!rawContent || sendingRef.current) return
     if (sessionStatus === 'ARCHIVED') { setChatError('This session is archived.'); return }
+
+    // Synchronously lock sendingRef to prevent duplicate dispatches
+    sendingRef.current = true
+    setSending(true)
+    setChatError(null)
+    setLastFailedMessage(null)
 
     const targetMode = modeOverride || selectedMode
 
@@ -674,14 +790,13 @@ function Tutor() {
       currentSessId = await handleCreateSessionSilent()
       if (!currentSessId) {
         setChatError('Failed to initialize session. Please try again.')
+        sendingRef.current = false
+        setSending(false)
         return
       }
     }
 
     if (!overrideText) setInput('')
-    setSending(true)
-    setChatError(null)
-    setLastFailedMessage(null)
 
     // Optimistic user message
     const tempId = `temp-${Date.now()}`
@@ -696,33 +811,29 @@ function Tutor() {
       const d = await r.json()
 
       if (!r.ok) {
-        // Remove optimistic message on failure
         setMessages(prev => prev.filter(m => m.id !== tempId))
         if (!overrideText) setInput(rawContent)
         setLastFailedMessage({ content: rawContent, mode: targetMode })
 
-        if (r.status === 503) {
-          setChatError(d.error || 'AI tutor is temporarily unavailable. Please try again.')
+        if (r.status === 503 || r.status === 429) {
+          setChatError('The AI tutor is temporarily busy. Your progress has been saved. Please click Retry.')
           setAiAvailable(false)
-        } else if (r.status === 429) {
-          setChatError(d.error || 'You\'ve reached the message limit (20/hour). Please wait before sending more.')
         } else {
           setChatError(d.error || 'Failed to send message.')
         }
         return
       }
 
-      // Append real assistant message
       setMessages(prev => [...prev, d.message])
       setAiAvailable(true)
-      // Update session list updatedAt
       setSessions(prev => prev.map(s => s.id === currentSessId ? { ...s, updatedAt: new Date().toISOString(), messageCount: s.messageCount + 2 } : s))
     } catch {
       setMessages(prev => prev.filter(m => m.id !== tempId))
       if (!overrideText) setInput(rawContent)
       setLastFailedMessage({ content: rawContent, mode: targetMode })
-      setChatError('Network error. Please try again.')
+      setChatError('Network connection interrupted. Your input was preserved. Click Retry when ready.')
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }
@@ -734,10 +845,116 @@ function Tutor() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-7">
       <PageHeading
-        eyebrow="Personal coach"
+        eyebrow="Adaptive Personal Mentor"
         title="Your AI tutor."
-        description="Ask questions, clarify concepts, and practice explaining ideas clearly."
+        description="Experience an adaptive, Socratic AI tutor that understands your level, explains step-by-step, corrects misconceptions, and tracks your progress."
       />
+
+      {/* End-of-Session Summary Report Modal */}
+      {showSummaryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 shadow-2xl flex flex-col gap-5 my-8">
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <div className="flex items-center gap-2">
+                <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <Award className="size-4" />
+                </span>
+                <div>
+                  <h2 className="font-semibold text-lg">Session Learning Summary</h2>
+                  <p className="text-xs text-muted-foreground">Performance evaluation for this tutoring session.</p>
+                </div>
+              </div>
+              <button onClick={() => setShowSummaryModal(false)} className="rounded-lg p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {loadingSummary ? (
+              <div className="flex h-48 flex-col items-center justify-center gap-3">
+                <Loader2 className="size-8 animate-spin text-primary" />
+                <p className="text-xs text-muted-foreground">Compiling session learning report…</p>
+              </div>
+            ) : sessionSummary ? (
+              <div className="flex flex-col gap-5 text-xs">
+                {/* Score Banner */}
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-primary">Session Mastery Score</span>
+                    <p className="text-3xl font-bold text-primary mt-1">{sessionSummary.score}/100</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="rounded bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
+                      {sessionSummary.score >= 80 ? 'Mastery Demonstrated' : sessionSummary.score >= 60 ? 'Good Understanding' : 'Needs Practice'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Concepts Mastered */}
+                <div>
+                  <h3 className="font-semibold text-sm mb-2 flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="size-4" /> Concepts Mastered
+                  </h3>
+                  <ul className="flex flex-col gap-1.5 text-muted-foreground pl-1">
+                    {sessionSummary.conceptsMastered.map((c, i) => (
+                      <li key={i} className="flex items-center gap-2">
+                        <span className="size-1.5 rounded-full bg-emerald-500"></span>
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Concepts Needing Practice */}
+                <div>
+                  <h3 className="font-semibold text-sm mb-2 flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                    <AlertCircle className="size-4" /> Concepts Needing Practice
+                  </h3>
+                  <ul className="flex flex-col gap-1.5 text-muted-foreground pl-1">
+                    {sessionSummary.conceptsNeedingPractice.map((c, i) => (
+                      <li key={i} className="flex items-center gap-2">
+                        <span className="size-1.5 rounded-full bg-amber-500"></span>
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Common Mistakes */}
+                {sessionSummary.commonMistakes.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-sm mb-2 flex items-center gap-1.5 text-muted-foreground">
+                      <Lightbulb className="size-4 text-primary" /> Key Misconceptions Addressed
+                    </h3>
+                    <ul className="flex flex-col gap-1.5 text-muted-foreground pl-1">
+                      {sessionSummary.commonMistakes.map((m, i) => (
+                        <li key={i} className="flex items-center gap-2">
+                          <span className="size-1.5 rounded-full bg-primary"></span>
+                          {m}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Next Topic Recommendation */}
+                <div className="rounded-xl border border-border bg-muted/40 p-3.5 flex items-center gap-3">
+                  <Sparkles className="size-5 text-primary shrink-0" />
+                  <div>
+                    <p className="font-semibold text-foreground">Recommended Next Step:</p>
+                    <p className="text-muted-foreground mt-0.5">{sessionSummary.recommendedNextTopic}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-center text-xs text-muted-foreground py-8">Summary report unavailable for this session.</p>
+            )}
+
+            <button onClick={() => setShowSummaryModal(false)} className={`${button} w-full mt-2`}>
+              Close Report
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-[1fr_260px]">
         {/* ── Chat Panel ── */}
@@ -749,21 +966,37 @@ function Tutor() {
                 <Sparkles className="size-4" />
               </span>
               <div>
-                <p className="text-sm font-semibold">Intervue Coach</p>
-                <p className="text-xs text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold">Intervue Coach</p>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold border ${computedAdaptiveState.style}`}>
+                    {computedAdaptiveState.emoji} {computedAdaptiveState.level}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {aiAvailable === false
-                    ? 'AI service unavailable'
+                    ? 'AI service rate-limited'
                     : aiAvailable === true
-                    ? 'AI Powered · Role Aware'
+                    ? 'Adaptive AI Teacher · Socratic Feedback'
                     : activeSessionId ? 'Loading session…' : 'Select or start a session'}
                 </p>
               </div>
             </div>
-            {activeSubjectLabel && (
-              <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
-                {activeSubjectLabel}
-              </span>
-            )}
+
+            <div className="flex items-center gap-2">
+              {activeSubjectLabel && (
+                <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
+                  {activeSubjectLabel} {sessionTopic ? `· ${sessionTopic.name}` : ''}
+                </span>
+              )}
+              {activeSessionId && messages.length >= 2 && (
+                <button
+                  onClick={handleOpenSummary}
+                  className="rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition flex items-center gap-1"
+                >
+                  <Award className="size-3.5" /> End & Summarize
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Mode Selector Pill Bar */}
@@ -805,37 +1038,50 @@ function Tutor() {
             ) : messages.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
                 <MessageSquareText className="size-10 text-muted-foreground/30" />
-                <p className="text-sm text-muted-foreground">Ask your first question to get started.</p>
+                <p className="text-sm text-muted-foreground">Ask your first question or pick a quick prompt to start adaptive learning.</p>
               </div>
             ) : (
               messages.map((m) => (
                 <div
                   key={m.id}
-                  className={`max-w-[85%] rounded-xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${
+                  className={`group relative max-w-[85%] rounded-xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${
                     m.role === 'USER'
                       ? 'self-end bg-primary text-primary-foreground'
-                      : 'self-start bg-muted'
+                      : 'self-start bg-muted text-foreground border border-border/40'
                   }`}
                 >
                   {m.content.replace(/^\[MODE:[A-Z_]+\]\s*/, '')}
+
+                  {m.role === 'ASSISTANT' && (
+                    <button
+                      onClick={() => readAloud(m.content)}
+                      title="Read aloud"
+                      className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition rounded p-1 hover:bg-background/50 text-muted-foreground"
+                    >
+                      <Volume2 className="size-3.5" />
+                    </button>
+                  )}
                 </div>
               ))
             )}
+
             {sending && (
-              <div className="self-start flex items-center gap-2 rounded-xl bg-muted px-4 py-3 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" /> Thinking…
+              <div className="self-start flex items-center gap-2 rounded-xl bg-muted px-4 py-3 text-sm text-muted-foreground animate-pulse">
+                <Loader2 className="size-4 animate-spin text-primary" />
+                <span>🧠 Intervue Coach is thinking & formulating response…</span>
               </div>
             )}
+
             {chatError && (
-              <div className="self-stretch flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive">
+              <div className="self-stretch flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive shadow-xs">
                 <span>{chatError}</span>
                 {lastFailedMessage && (
                   <button
                     onClick={() => sendMessage(lastFailedMessage.content, lastFailedMessage.mode)}
                     disabled={sending}
-                    className="rounded bg-destructive text-destructive-foreground px-2.5 py-1 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50"
+                    className="rounded bg-destructive text-destructive-foreground px-3 py-1 text-xs font-semibold transition hover:opacity-90 disabled:opacity-50 flex items-center gap-1"
                   >
-                    Retry
+                    <RotateCcw className="size-3" /> Retry Message
                   </button>
                 )}
               </div>
@@ -843,28 +1089,54 @@ function Tutor() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
+          {/* Input Area */}
           <div className="border-t border-border p-4">
             {sessionStatus === 'ARCHIVED' && (
               <p className="mb-2 text-xs text-muted-foreground text-center">This session is archived.</p>
             )}
-            <div className="flex items-center gap-2 rounded-lg border border-input bg-background p-1">
+            <div className="flex items-center gap-2 rounded-lg border border-input bg-background p-1.5">
+              {/* Mic Toggle Button */}
+              <button
+                onClick={toggleMic}
+                title={isListening ? 'Stop Speech Recognition' : 'Voice Input (Speech-to-Text)'}
+                className={`grid size-9 place-items-center rounded-md transition ${
+                  isListening
+                    ? 'bg-rose-600 text-white animate-pulse'
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                }`}
+              >
+                {isListening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
+              </button>
+
               <input
                 aria-label="Ask your tutor"
                 value={input}
                 disabled={!activeSessionId || sending || sessionStatus === 'ARCHIVED'}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) sendMessage()
+                onChange={e => {
+                  setInput(e.target.value)
+                  if (chatError) setChatError(null)
                 }}
-                placeholder={activeSessionId ? `Ask in ${TUTOR_MODES.find(m => m.id === selectedMode)?.label || 'Learn'} mode…` : 'Select a session to start chatting…'}
-                className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none disabled:opacity-50"
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+                    e.preventDefault()
+                    sendMessage()
+                  }
+                }}
+                placeholder={
+                  isListening
+                    ? 'Listening... Speak into microphone...'
+                    : activeSessionId
+                    ? `Ask in ${TUTOR_MODES.find(m => m.id === selectedMode)?.label || 'Learn'} mode…`
+                    : 'Select a session to start chatting…'
+                }
+                className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm outline-none disabled:opacity-50"
               />
+
               <button
                 onClick={() => sendMessage()}
                 disabled={!input.trim() || !activeSessionId || sending || sessionStatus === 'ARCHIVED'}
                 aria-label="Send message"
-                className="grid size-9 place-items-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
+                className="grid size-9 place-items-center rounded-md bg-primary text-primary-foreground disabled:opacity-40 hover:opacity-90 transition"
               >
                 {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
               </button>
@@ -896,7 +1168,7 @@ function Tutor() {
                 <input
                   value={newTitle}
                   onChange={e => setNewTitle(e.target.value)}
-                  placeholder="e.g. Binary Search practice"
+                  placeholder="e.g. Operating Systems Deadlocks"
                   className="rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none"
                 />
               </label>
@@ -917,12 +1189,12 @@ function Tutor() {
               {sessions.length > 0 && (
                 <div className="mt-5">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Past Sessions</p>
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1.5 max-h-52 overflow-y-auto">
                     {sessions.map(s => (
                       <button
                         key={s.id}
                         onClick={() => loadSession(s.id)}
-                        className={`rounded-lg border px-3 py-2 text-left text-xs transition hover:bg-accent ${activeSessionId === s.id ? 'border-primary bg-primary/5' : 'border-border'}`}
+                        className={`rounded-lg border px-3 py-2 text-left text-xs transition hover:bg-accent ${activeSessionId === s.id ? 'border-primary bg-primary/5 font-semibold' : 'border-border'}`}
                       >
                         <p className="font-medium truncate">{s.title || s.subject?.name || 'General'}</p>
                         <p className="text-muted-foreground mt-0.5">{s.messageCount} messages · {s.subject?.shortTitle || 'General'}</p>
@@ -934,16 +1206,15 @@ function Tutor() {
 
               {/* Quick Actions Shortcuts */}
               <div className="mt-5">
-                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Quick Prompts</h2>
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Quick Adaptive Prompts</h2>
                 <div className="grid gap-2">
                   {[
-                    { label: '📚 Teach me this concept', mode: 'LEARN', prompt: 'Explain the core concepts, patterns, and trade-offs for my current topic in simple terms.' },
-                    { label: '🎯 Practice question', mode: 'PRACTICE', prompt: 'Give me a placement practice question for my target role and let me answer.' },
-                    { label: '💡 Give me a hint', mode: 'HINT', prompt: 'Give me a guiding hint for my current topic or problem without giving away the final answer.' },
-                    { label: '🔍 Explain common mistakes', mode: 'EXPLAIN_MISTAKE', prompt: 'Explain common conceptual mistakes candidates make in this topic during technical interviews.' },
-                    { label: '🎙️ Interview practice', mode: 'INTERVIEW_PREP', prompt: 'Ask me a technical interview question tailored to my selected target career role.' },
-                    { label: '🔁 Review weak areas', mode: 'REVISION', prompt: 'Help me revise my weak topics and key edge cases before my placement interviews.' },
-                    { label: '🚀 Prepare for my role', mode: 'ROLE_PREP', prompt: 'What specific skills and projects do I need to master next for my target role?' },
+                    { label: '📚 Teach me this concept', mode: 'LEARN', prompt: 'Explain the core concepts, practical examples, and key takeaways for my topic.' },
+                    { label: '🎯 Practice question', mode: 'PRACTICE', prompt: 'Ask me an adaptive practice question on my current topic.' },
+                    { label: '💡 Socratic Hint', mode: 'HINT', prompt: 'Give me a guiding hint to reason through my current topic without giving away the answer.' },
+                    { label: '🔍 Explain common mistakes', mode: 'EXPLAIN_MISTAKE', prompt: 'What common conceptual mistakes do candidates make in this topic during interviews?' },
+                    { label: '🎙️ Technical Interview', mode: 'INTERVIEW_PREP', prompt: 'Ask me a technical interview question tailored to my target role.' },
+                    { label: '🔁 Revision Checklist', mode: 'REVISION', prompt: 'Provide a concise high-yield revision checklist for this topic.' },
                   ].map((item) => (
                     <button
                       key={item.label}
@@ -2003,25 +2274,45 @@ function Interview() {
     )
   }
 
+  const typeDescriptions: Record<string, string> = {
+    TECHNICAL: 'Deep technical domain depth, algorithm trade-offs, system architecture & code logic.',
+    BEHAVIORAL: 'STAR-method leadership scenarios, team collaboration, conflicts & ethical situations.',
+    GENERAL: 'Professional background, project walkthroughs, career motivation & placement role fit.',
+    MIXED: 'Comprehensive hybrid of technical concept questions and behavioral scenario questions.',
+  }
+
+  const durationEstimates: Record<number, string> = {
+    3: '~8–10 minutes',
+    5: '~15–20 minutes',
+    8: '~25–30 minutes',
+    10: '~35–40 minutes',
+  }
+
   return (
     <div className="flex flex-col gap-7">
       <PageHeading
-        eyebrow="Real-world rehearsal"
+        eyebrow="Voice-First Placement Rehearsal"
         title="Meet your AI interviewer."
-        description="Configure a realistic text-based practice session for your target role. Evaluated by AI with instant feedback."
+        description="Experience an interactive, real-time voice video interview simulation tailored to your target role with natural spoken conversation and instant performance metrics."
       />
 
       <div className="grid gap-5 lg:grid-cols-[1fr_.8fr]">
         {/* Setup Card */}
         <section className={`${card} p-6`}>
-          <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
-              <Video className="size-5" />
-            </span>
-            <div>
-              <h2 className="font-semibold">Interview setup</h2>
-              <p className="text-sm text-muted-foreground">Choose the parameters for your practice session.</p>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
+                <Video className="size-5" />
+              </span>
+              <div>
+                <h2 className="font-semibold">Interview setup</h2>
+                <p className="text-sm text-muted-foreground">Configure your simulated placement round.</p>
+              </div>
             </div>
+            <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
+              <Mic className="size-3.5" />
+              Voice-First Simulation
+            </span>
           </div>
 
           {setupError && (
@@ -2087,15 +2378,21 @@ function Interview() {
                 onChange={e => setQuestionCount(Number(e.target.value))}
                 className="rounded-lg border border-input bg-background px-3 py-2.5 font-normal outline-none focus:ring-2 focus:ring-ring"
               >
-                <option value={3}>3 Questions</option>
-                <option value={5}>5 Questions</option>
-                <option value={8}>8 Questions</option>
-                <option value={10}>10 Questions</option>
+                <option value={3}>3 Questions ({durationEstimates[3]})</option>
+                <option value={5}>5 Questions ({durationEstimates[5]})</option>
+                <option value={8}>8 Questions ({durationEstimates[8]})</option>
+                <option value={10}>10 Questions ({durationEstimates[10]})</option>
               </select>
             </label>
           </div>
 
-          <label className="mt-5 flex flex-col gap-2 text-sm font-medium">
+          {/* Interview Type Context Box */}
+          <div className="mt-4 rounded-lg bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground flex items-center gap-2.5 border border-border/50">
+            <Sparkles className="size-4 text-primary shrink-0" />
+            <span>{typeDescriptions[type] || typeDescriptions.TECHNICAL}</span>
+          </div>
+
+          <label className="mt-4 flex flex-col gap-2 text-sm font-medium">
             Subject focus (optional)
             <select
               value={subjectId}
@@ -2112,7 +2409,7 @@ function Interview() {
           <button onClick={handleStart} disabled={starting} className="mt-6 w-full sm:w-auto">
             <span className={button}>
               {starting ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-              {starting ? 'Generating 1st question…' : 'Start interview'}
+              {starting ? 'Initializing AI interview room…' : 'Start live voice interview'}
             </span>
           </button>
         </section>
@@ -2122,21 +2419,22 @@ function Interview() {
           <section className={`${card} flex flex-col justify-between p-6`}>
             <div>
               <div className="flex items-center justify-between">
-                <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary">Text-Based Engine</span>
+                <span className="rounded-md bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">Conversational AI Engine</span>
+                <span className="text-xs text-muted-foreground font-mono">Est: {durationEstimates[questionCount]}</span>
               </div>
-              <h2 className="mt-4 text-xl font-semibold">Practice like it&apos;s the real thing.</h2>
+              <h2 className="mt-4 text-xl font-semibold">Speak & practice naturally.</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Answer AI-generated questions in real time. Each answer is evaluated across relevance, correctness, clarity, and depth.
+                Speak directly into your microphone. The AI interviewer listens, dynamically builds context-aware follow-up questions, and generates comprehensive feedback.
               </p>
             </div>
             <div className="mt-6 flex flex-col gap-3">
               {[
-                ['AI Question Generation', CheckCircle2],
-                ['Instant Answer Evaluation', Target],
-                ['Detailed Performance Breakdown', Lightbulb],
+                ['Voice-to-Speech Real-Time Transcript', Mic],
+                ['Adaptive Conversational Follow-Ups', BrainCircuit],
+                ['Placement Readiness Assessment Badge', Award],
               ].map(([text, Icon]) => (
-                <div key={text as string} className="flex items-center gap-3 text-sm">
-                  <Icon className="size-4 text-primary" />
+                <div key={text as string} className="flex items-center gap-3 text-sm font-medium">
+                  <Icon className="size-4 text-primary shrink-0" />
                   {text as string}
                 </div>
               ))}
@@ -2652,6 +2950,49 @@ function LiveInterview({
     }
   }, [currentQuestion, ttsMuted, introPlayed])
 
+  // Stopwatch timer for live call session
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const formatTimer = (sec: number) => {
+    const m = Math.floor(sec / 60)
+    const s = sec % 60
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+  }
+
+  // Auto-submit countdown state (2.5 seconds after speech stops)
+  const [autoSubmitCountdown, setAutoSubmitCountdown] = useState<number | null>(null)
+
+  useEffect(() => {
+    // When mic stops listening and transcript text exists, trigger auto-submit countdown
+    if (micState === 'STOPPED' && answerText.trim().length >= 3 && !submitting && autoSubmitCountdown === null) {
+      setAutoSubmitCountdown(3)
+    }
+  }, [micState, answerText, submitting, autoSubmitCountdown])
+
+  useEffect(() => {
+    if (autoSubmitCountdown === null) return
+    if (autoSubmitCountdown <= 0) {
+      setAutoSubmitCountdown(null)
+      handleSubmitAnswer()
+      return
+    }
+    const timer = setTimeout(() => {
+      setAutoSubmitCountdown(prev => (prev !== null ? prev - 1 : null))
+    }, 1000)
+    return () => clearTimeout(timer)
+  }, [autoSubmitCountdown])
+
+  const cancelAutoSubmit = () => {
+    setAutoSubmitCountdown(null)
+  }
+
   // Speech Recognition (STT) setup with robust state machine
   const toggleListening = () => {
     if (typeof window === 'undefined') return
@@ -2672,6 +3013,7 @@ function LiveInterview({
 
     setMicState('STARTING')
     setMicError(null)
+    setAutoSubmitCountdown(null)
 
     try {
       const rec = new SpeechRecognition()
@@ -2722,6 +3064,8 @@ function LiveInterview({
   // Submit answer to current question
   async function handleSubmitAnswer() {
     if (!answerText.trim() || submitting || !currentQuestion) return
+
+    setAutoSubmitCountdown(null)
 
     if (listening && recognition) {
       try { recognition.stop() } catch {}
@@ -2817,8 +3161,8 @@ function LiveInterview({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="inline-block size-2 rounded-full bg-rose-500 animate-ping"></span>
-            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">Live Video Rehearsal</p>
+            <span className="inline-block size-2 rounded-full bg-emerald-500 animate-ping"></span>
+            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">Live Voice Video Rehearsal</p>
           </div>
           <h1 className="mt-1 text-2xl font-semibold">
             {session?.title || `${session?.difficulty} ${session?.interviewType} Interview`}
@@ -2829,6 +3173,10 @@ function LiveInterview({
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 rounded-md bg-muted/80 px-3 py-1.5 text-xs font-mono font-medium text-foreground border border-border">
+            <Clock3 className="size-3.5 text-primary" />
+            <span>{formatTimer(elapsedSeconds)}</span>
+          </div>
           <span className="rounded-md bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
             Question {qNum} of {totalQ}
           </span>
@@ -2865,7 +3213,7 @@ function LiveInterview({
       )}
 
       {/* ==================================================================== */}
-      {/* TWO-PANEL VIDEO INTERVIEW CALL CONTAINER (Matching Reference Image) */}
+      {/* TWO-PANEL VIDEO INTERVIEW CALL CONTAINER */}
       {/* ==================================================================== */}
       <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-4 md:p-6 shadow-2xl relative flex flex-col gap-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
@@ -2887,12 +3235,20 @@ function LiveInterview({
                 AI Interviewer
               </span>
 
-              <span className="rounded-md bg-black/60 backdrop-blur-md px-2.5 py-1 text-[11px] font-medium text-zinc-300 border border-white/10">
-                {speaking ? '🔊 Speaking...' : listening ? '🎙 Listening...' : submitting ? '⚡ Evaluating...' : 'Ready'}
+              <span className="rounded-md bg-black/60 backdrop-blur-md px-2.5 py-1 text-[11px] font-medium text-zinc-300 border border-white/10 flex items-center gap-1">
+                {speaking ? (
+                  <>🔊 Speaking...</>
+                ) : listening ? (
+                  <>🎙 Candidate Speaking...</>
+                ) : submitting ? (
+                  <><Loader2 className="size-3 animate-spin text-amber-400" /> ⚡ AI Thinking & Evaluating...</>
+                ) : (
+                  <>Ready</>
+                )}
               </span>
             </div>
 
-            {/* Bottom Spoken Question Transcript Overlay (Reference Image Match) */}
+            {/* Bottom Spoken Question Transcript Overlay */}
             <div className="relative z-10 mt-auto bg-zinc-900/90 backdrop-blur-md text-white text-xs p-3.5 rounded-xl border border-white/10 shadow-2xl flex items-center gap-3">
               <div className="flex items-center gap-1 shrink-0">
                 {[12, 22, 16, 26, 18].map((h, i) => (
@@ -2926,7 +3282,7 @@ function LiveInterview({
                   <UserRound className="size-12" />
                 </div>
                 <p className="mt-3 text-xs font-medium text-zinc-400">Camera turned off</p>
-                <p className="text-[10px] text-zinc-500 mt-1">Click the camera icon below to enable preview</p>
+                <p className="text-[10px] text-zinc-500 mt-1">Click camera icon to activate preview</p>
               </div>
             )}
 
@@ -2937,17 +3293,17 @@ function LiveInterview({
             <div className="relative z-10 flex items-center justify-between w-full">
               <span className="rounded-md bg-black/60 backdrop-blur-md px-3 py-1 text-xs font-semibold text-white border border-white/10 flex items-center gap-1.5">
                 <span className={`size-2 rounded-full ${cameraOn ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                Candidate
+                Candidate ({candidateName || 'You'})
               </span>
 
               {listening && (
                 <span className="rounded-md bg-rose-500/80 backdrop-blur-md px-2.5 py-1 text-[11px] font-semibold text-white animate-pulse flex items-center gap-1">
-                  <Mic className="size-3" /> Audio Active
+                  <Mic className="size-3" /> Recording Spoken Response
                 </span>
               )}
             </div>
 
-            {/* Bottom Candidate Response Transcript Overlay (Reference Image Match) */}
+            {/* Bottom Candidate Response Transcript Overlay */}
             <div className="relative z-10 mt-auto bg-zinc-900/90 backdrop-blur-md text-white text-xs p-3.5 rounded-xl border border-white/10 shadow-2xl flex items-center gap-3">
               <div className="flex items-center gap-1 shrink-0">
                 {[14, 24, 18, 28, 16].map((h, i) => (
@@ -2963,19 +3319,19 @@ function LiveInterview({
                   ? answerText
                   : listening
                   ? 'Listening for your response... Speak into microphone...'
-                  : 'Click microphone or type your answer below...'}
+                  : 'Click microphone below to start speaking...'}
               </p>
             </div>
           </div>
 
         </div>
 
-        {/* BOTTOM FLOATING CALL CONTROL BAR (Exact Reference Image Match) */}
+        {/* BOTTOM FLOATING CALL CONTROL BAR */}
         <div className="flex items-center justify-center gap-4 py-2.5 px-6 bg-zinc-900/90 backdrop-blur-xl border border-zinc-800 rounded-full shadow-2xl mx-auto w-fit">
           {/* Microphone Control */}
           <button
             onClick={toggleListening}
-            title={listening ? 'Stop Microphone' : 'Start Microphone'}
+            title={listening ? 'Stop Microphone & Auto-Submit' : 'Start Microphone'}
             className={`size-12 rounded-full grid place-items-center transition-all ${
               listening
                 ? 'bg-rose-600 text-white animate-pulse ring-4 ring-rose-500/30'
@@ -3031,6 +3387,30 @@ function LiveInterview({
       {/* CANDIDATE ANSWER INPUT WORKSPACE & EVALUATION FEEDBACK */}
       {/* ==================================================================== */}
       <section className={`${card} p-6 flex flex-col gap-4`}>
+        {/* Auto-Submit Countdown Banner */}
+        {autoSubmitCountdown !== null && (
+          <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3.5 text-xs flex flex-wrap items-center justify-between gap-3 animate-pulse">
+            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold">
+              <Clock3 className="size-4 shrink-0" />
+              <span>Speech finished! Auto-submitting response in <strong>{autoSubmitCountdown}s</strong>...</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={cancelAutoSubmit}
+                className="rounded-lg border border-border bg-background px-3 py-1 text-xs font-medium hover:bg-accent transition"
+              >
+                Cancel / Edit Text
+              </button>
+              <button
+                onClick={handleSubmitAnswer}
+                className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition"
+              >
+                Submit Now
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Previous Answer Evaluation Summary */}
         {lastEval && (
           <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs leading-relaxed">
@@ -3042,23 +3422,54 @@ function LiveInterview({
           </div>
         )}
 
-        <div className="flex items-center justify-between">
-          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Response & Speech Transcript
-          </label>
-          <span className="text-xs text-muted-foreground">
-            {answerText.trim().length} characters
-          </span>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Live Speech Transcript
+            </label>
+            <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+              Voice-First
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Prominent Voice Toggle Button */}
+            <button
+              onClick={toggleListening}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                listening
+                  ? 'bg-rose-600 text-white animate-pulse'
+                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
+              }`}
+            >
+              {listening ? (
+                <>
+                  <MicOff className="size-3.5" /> Stop & Auto-Submit
+                </>
+              ) : (
+                <>
+                  <Mic className="size-3.5" /> 🎙 Speak Your Answer
+                </>
+              )}
+            </button>
+
+            <span className="text-xs text-muted-foreground">
+              {answerText.trim().length} chars
+            </span>
+          </div>
         </div>
 
         <textarea
           value={answerText}
-          onChange={(e) => setAnswerText(e.target.value)}
+          onChange={(e) => {
+            setAnswerText(e.target.value)
+            if (autoSubmitCountdown !== null) setAutoSubmitCountdown(null)
+          }}
           disabled={submitting}
           placeholder={
             listening
               ? 'Listening to microphone... Speak your response clearly...'
-              : 'Type your answer or use microphone controls above...'
+              : 'Click "🎙 Speak Your Answer" above to speak into microphone, or type your answer here...'
           }
           rows={4}
           className="w-full rounded-xl border border-input bg-background p-4 text-xs leading-relaxed outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
@@ -3066,7 +3477,7 @@ function LiveInterview({
 
         <div className="flex items-center justify-between border-t border-border pt-3">
           <p className="text-[11px] text-muted-foreground">
-            Click <strong>Submit Answer</strong> when finished speaking or typing.
+            Press <strong>🎙 Speak Your Answer</strong> or click <strong>Submit Response</strong> when finished.
           </p>
           <button
             onClick={handleSubmitAnswer}
@@ -3075,11 +3486,11 @@ function LiveInterview({
           >
             {submitting ? (
               <>
-                <Loader2 className="size-3.5 animate-spin" /> Evaluating...
+                <Loader2 className="size-3.5 animate-spin" /> AI Evaluating Response...
               </>
             ) : (
               <>
-                <Send className="size-3.5" /> Submit Answer
+                <Send className="size-3.5" /> Submit Response
               </>
             )}
           </button>
@@ -3101,6 +3512,13 @@ function InterviewResult({
       id: string; title: string | null; interviewType: string; targetRole: string | null;
       difficulty: string; overallScore: number | null; overallFeedback: string | null;
     };
+    summaryData?: {
+      feedback: string
+      interviewerAssessment: 'Strong Hire' | 'Hire' | 'Borderline' | 'Needs Improvement'
+      strongestAnswerIndex: number
+      weakestAnswerIndex: number
+      communicationNotes: string
+    } | null;
     metrics: { relevanceScore: number; correctnessScore: number; clarityScore: number; depthScore: number };
     strengths: string[];
     improvements: string[];
@@ -3131,11 +3549,25 @@ function InterviewResult({
       .finally(() => setLoading(false))
   }, [sessionId])
 
+  const parsedSummary = useMemo(() => {
+    if (!result) return null
+    if (result.summaryData) return result.summaryData
+    if (result.session.overallFeedback) {
+      try {
+        const p = JSON.parse(result.session.overallFeedback)
+        if (p && typeof p === 'object' && p.feedback) return p
+      } catch {
+        return null
+      }
+    }
+    return null
+  }, [result])
+
   if (loading) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-3">
         <Loader2 className="size-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Calculating overall interview score…</p>
+        <p className="text-sm text-muted-foreground">Calculating overall placement readiness score…</p>
       </div>
     )
   }
@@ -3151,34 +3583,76 @@ function InterviewResult({
   }
 
   const score100 = result.session.overallScore ?? 0
+  const assessment = parsedSummary?.interviewerAssessment || (score100 >= 80 ? 'Strong Hire' : score100 >= 65 ? 'Hire' : score100 >= 50 ? 'Borderline' : 'Needs Improvement')
+  const strongestIndex = parsedSummary?.strongestAnswerIndex ?? 1
+  const weakestIndex = parsedSummary?.weakestAnswerIndex ?? 1
+
+  const assessmentBadgeStyle: Record<string, { bg: string; text: string; border: string; label: string; icon: any }> = {
+    'Strong Hire': {
+      bg: 'bg-emerald-500/10 dark:bg-emerald-950/30',
+      text: 'text-emerald-600 dark:text-emerald-400',
+      border: 'border-emerald-500/30',
+      label: 'Strong Hire — Recommend Immediate Offer',
+      icon: Award,
+    },
+    'Hire': {
+      bg: 'bg-blue-500/10 dark:bg-blue-950/30',
+      text: 'text-blue-600 dark:text-blue-400',
+      border: 'border-blue-500/30',
+      label: 'Hire — Solid Candidate for Role',
+      icon: CheckCircle2,
+    },
+    'Borderline': {
+      bg: 'bg-amber-500/10 dark:bg-amber-950/30',
+      text: 'text-amber-600 dark:text-amber-400',
+      border: 'border-amber-500/30',
+      label: 'Borderline — Needs Further Preparation',
+      icon: AlertCircle,
+    },
+    'Needs Improvement': {
+      bg: 'bg-rose-500/10 dark:bg-rose-950/30',
+      text: 'text-rose-600 dark:text-rose-400',
+      border: 'border-rose-500/30',
+      label: 'Needs Improvement — Core Skill Gaps',
+      icon: AlertCircle,
+    },
+  }
+
+  const badgeConfig = assessmentBadgeStyle[assessment] || assessmentBadgeStyle['Hire']
+  const AssessmentIcon = badgeConfig.icon
+
+  const displayFeedbackText = parsedSummary?.feedback || result.session.overallFeedback || 'Great work completing your practice interview.'
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-7">
       <PageHeading
-        eyebrow="Interview complete"
-        title="Here's how you performed."
-        description="Detailed evaluation calculated from your answers by the AI interview engine."
+        eyebrow="Voice Interview Complete"
+        title="Here's your interviewer assessment."
+        description="Structured performance evaluation calculated across technical depth, clarity, relevance, and verbal communication."
       />
 
-      <div className="grid gap-5 lg:grid-cols-[.7fr_1.3fr]">
-        {/* Score Card */}
-        <section className={`${card} flex flex-col items-center justify-center p-8 text-center`}>
-          <span className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
-            {result.session.difficulty} · {result.session.interviewType}
-          </span>
-          <p className="mt-6 text-6xl font-semibold text-primary">
-            {score100}
-            <span className="text-2xl text-muted-foreground">/100</span>
-          </p>
-          <p className="mt-3 text-sm text-muted-foreground">
-            {score100 >= 80
-              ? 'Excellent performance · Interview ready'
-              : score100 >= 60
-              ? 'Good effort · Solid foundation'
-              : 'Keep practicing · Focus on depth'}
-          </p>
-          <div className="mt-6 w-full">
-            <ProgressBar value={score100} />
+      <div className="grid gap-5 lg:grid-cols-[.8fr_1.2fr]">
+        {/* Score & Assessment Badge Card */}
+        <section className={`${card} flex flex-col items-center justify-between p-7 text-center`}>
+          <div className="flex flex-col items-center w-full">
+            <span className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+              {result.session.difficulty} · {result.session.interviewType}
+            </span>
+
+            <p className="mt-5 text-6xl font-semibold text-primary">
+              {score100}
+              <span className="text-2xl text-muted-foreground">/100</span>
+            </p>
+
+            <div className="mt-5 w-full">
+              <ProgressBar value={score100} />
+            </div>
+          </div>
+
+          {/* Prominent Interviewer Assessment Badge */}
+          <div className={`mt-6 w-full rounded-xl border p-4 text-xs font-semibold ${badgeConfig.bg} ${badgeConfig.text} ${badgeConfig.border} flex items-center justify-center gap-2 shadow-sm`}>
+            <AssessmentIcon className="size-4 shrink-0" />
+            <span>{badgeConfig.label}</span>
           </div>
         </section>
 
@@ -3207,93 +3681,139 @@ function InterviewResult({
       {/* Strengths & Improvements */}
       <div className="grid gap-5 lg:grid-cols-2">
         <section className={`${card} p-6`}>
-          <h2 className="font-semibold text-base">Strengths</h2>
+          <h2 className="font-semibold text-base">Key Strengths</h2>
           <ul className="mt-4 flex flex-col gap-3 text-sm text-muted-foreground">
             {result.strengths.length > 0 ? (
               result.strengths.map((str, idx) => (
                 <li key={idx} className="flex gap-2">
-                  <CheckCircle2 className="size-4 shrink-0 text-primary" />
+                  <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
                   {str}
                 </li>
               ))
             ) : (
               <li className="flex gap-2">
-                <CheckCircle2 className="size-4 shrink-0 text-primary" />
-                Clear communication and structured responses
+                <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
+                Clear verbal communication and structured response approach
               </li>
             )}
           </ul>
         </section>
 
         <section className={`${card} p-6`}>
-          <h2 className="font-semibold text-base">Areas to Improve</h2>
+          <h2 className="font-semibold text-base">Priority Improvement Areas</h2>
           <ul className="mt-4 flex flex-col gap-3 text-sm text-muted-foreground">
             {result.improvements.length > 0 ? (
               result.improvements.map((imp, idx) => (
                 <li key={idx} className="flex gap-2">
-                  <AlertCircle className="size-4 shrink-0 text-primary" />
+                  <AlertCircle className="size-4 shrink-0 text-amber-500" />
                   {imp}
                 </li>
               ))
             ) : (
               <li className="flex gap-2">
-                <AlertCircle className="size-4 shrink-0 text-primary" />
-                Add more specific technical details and edge-case handling
+                <AlertCircle className="size-4 shrink-0 text-amber-500" />
+                Elaborate further with specific algorithmic trade-offs and edge-case handling
               </li>
             )}
           </ul>
         </section>
       </div>
 
-      {/* AI Summary Feedback */}
-      <section className={`${card} p-6`}>
-        <div className="flex items-start gap-3">
-          <Lightbulb className="mt-0.5 size-5 text-primary shrink-0" />
-          <div>
-            <h2 className="font-semibold text-base">Overall AI Feedback</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground whitespace-pre-wrap">
-              {result.session.overallFeedback || 'Great work completing your AI interview practice.'}
-            </p>
+      {/* AI Summary Feedback & Communication Notes */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className={`${card} p-6`}>
+          <div className="flex items-start gap-3">
+            <Lightbulb className="mt-0.5 size-5 text-primary shrink-0" />
+            <div>
+              <h2 className="font-semibold text-base">Overall Lead Interviewer Feedback</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground whitespace-pre-wrap">
+                {displayFeedbackText}
+              </p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Question-by-Question Review */}
+        <section className={`${card} p-6 bg-muted/30`}>
+          <div className="flex items-start gap-3">
+            <Mic className="mt-0.5 size-5 text-primary shrink-0" />
+            <div>
+              <h2 className="font-semibold text-base">Communication & Delivery Notes</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {parsedSummary?.communicationNotes || 'Spoken responses were processed and evaluated for verbal structure, pacing, and professional clarity.'}
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* Question-by-Question Review with Gold Highlight & Weakest Callout */}
       <section className={`${card} p-6`}>
-        <h2 className="font-semibold text-base mb-4">Question Breakdown</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-base">Question Breakdown & Specific Evaluations</h2>
+          <span className="text-xs text-muted-foreground">
+            {result.questions.length} Questions Evaluated
+          </span>
+        </div>
+
         <div className="flex flex-col gap-4">
-          {result.questions.map((q) => (
-            <div key={q.id} className="rounded-lg border border-border p-4 text-xs leading-5">
-              <div className="flex items-center justify-between font-semibold">
-                <span className="text-primary text-sm">Question {q.questionNumber}</span>
+          {result.questions.map((q) => {
+            const isStrongest = q.questionNumber === strongestIndex
+            const isWeakest = q.questionNumber === weakestIndex && result.questions.length > 1
+
+            let cardContainerStyle = 'border-border bg-card'
+            if (isStrongest) {
+              cardContainerStyle = 'border-amber-500/50 bg-amber-500/5 dark:bg-amber-950/20 shadow-sm'
+            } else if (isWeakest) {
+              cardContainerStyle = 'border-indigo-500/50 bg-indigo-500/5 dark:bg-indigo-950/20 shadow-sm'
+            }
+
+            return (
+              <div key={q.id} className={`rounded-xl border p-4 text-xs leading-5 transition-all ${cardContainerStyle}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2 font-semibold">
+                  <div className="flex items-center gap-2">
+                    <span className="text-primary text-sm">Question {q.questionNumber}</span>
+                    {isStrongest && (
+                      <span className="rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                        <Star className="size-3 fill-amber-400 text-amber-500" /> Strongest Response
+                      </span>
+                    )}
+                    {isWeakest && (
+                      <span className="rounded bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 text-xs text-indigo-600 dark:text-indigo-400 font-semibold flex items-center gap-1">
+                        <Lightbulb className="size-3 text-indigo-500" /> Focus Area for Improvement
+                      </span>
+                    )}
+                  </div>
+
+                  {q.answer?.evaluation && (
+                    <span className="rounded bg-primary/10 px-2.5 py-1 text-xs text-primary font-semibold">
+                      Score: {q.answer.evaluation.overallScore * 10}/100
+                    </span>
+                  )}
+                </div>
+
+                <p className="font-medium text-sm text-foreground mt-2">{q.questionText}</p>
+
+                {q.answer && (
+                  <div className="mt-3 rounded-lg bg-muted/80 p-3">
+                    <p className="font-semibold text-muted-foreground mb-1">Your Response:</p>
+                    <p className="text-foreground leading-relaxed">{q.answer.answerText}</p>
+                  </div>
+                )}
+
                 {q.answer?.evaluation && (
-                  <span className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary font-semibold">
-                    Score: {q.answer.evaluation.overallScore * 10}/100
-                  </span>
+                  <div className="mt-3 border-t border-border/60 pt-2">
+                    <p className="font-semibold text-primary">AI Evaluation & Feedback:</p>
+                    <p className="text-muted-foreground mt-0.5">{q.answer.evaluation.feedback}</p>
+                  </div>
                 )}
               </div>
-              <p className="font-medium text-sm text-foreground mt-2">{q.questionText}</p>
-
-              {q.answer && (
-                <div className="mt-3 rounded bg-muted p-3">
-                  <p className="font-semibold text-muted-foreground mb-1">Your Answer:</p>
-                  <p className="text-foreground">{q.answer.answerText}</p>
-                </div>
-              )}
-
-              {q.answer?.evaluation && (
-                <div className="mt-3 border-t border-border pt-2">
-                  <p className="font-semibold text-primary">AI Evaluation:</p>
-                  <p className="text-muted-foreground mt-0.5">{q.answer.evaluation.feedback}</p>
-                </div>
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         <div className="mt-6 flex flex-wrap gap-2">
           <button onClick={onRetry} className={button}>
-            <RotateCcw className="size-4" /> Start New Interview
+            <RotateCcw className="size-4" /> Start New Rehearsal
           </button>
           <Link href="/analytics" className={outlineButton}>
             View Analytics
@@ -3641,7 +4161,7 @@ function Profile() {
                 className="rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-ring"
               />
             ) : (
-              <span className="rounded-lg bg-muted px-3 py-2.5 text-sm font-normal">{userData?.targetRole || 'Software Engineer'}</span>
+              <span className="rounded-lg bg-muted px-3 py-2.5 text-sm font-normal">{userData?.targetRole || 'Not specified'}</span>
             )}
           </label>
           <label className="flex flex-col gap-2 text-sm font-medium">
@@ -3654,7 +4174,7 @@ function Profile() {
                 className="rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-ring"
               />
             ) : (
-              <span className="rounded-lg bg-muted px-3 py-2.5 text-sm font-normal">{userData?.targetCompanies || 'Product & service companies'}</span>
+              <span className="rounded-lg bg-muted px-3 py-2.5 text-sm font-normal">{userData?.targetCompanies || 'Not specified'}</span>
             )}
           </label>
         </div>
@@ -4782,18 +5302,89 @@ function EmailVerificationBanner({ userEmail }: { userEmail: string }) {
 
 function PrivacyPage() {
   return (
-    <div className="mx-auto max-w-4xl px-5 py-12">
-      <div className="mb-8 flex items-center justify-between"><Brand /><Link href="/login" className={outlineButton}>Sign in</Link></div>
-      <h1 className="text-3xl font-bold tracking-tight">Privacy Policy</h1>
-      <p className="mt-2 text-sm text-muted-foreground">Last updated: September 3, 2026</p>
-      <div className="mt-6 space-y-6 text-sm text-muted-foreground leading-relaxed">
-        <p>At INTERVUE AI, we take your privacy seriously. This Privacy Policy describes how we collect, use, and protect your information when you use our technical interview preparation platform.</p>
-        <h2 className="text-lg font-semibold text-foreground">Information We Collect</h2>
-        <p>We collect account details (name, email), profile settings, quiz attempt responses, coding submissions, AI tutor dialogue history, and interview evaluation feedback solely to deliver personalized preparation analytics and adaptive recommendations.</p>
-        <h2 className="text-lg font-semibold text-foreground">How We Use OpenAI Services</h2>
-        <p>Server-side AI requests (AI Tutor and AI Mock Interviews) process user text inputs via OpenAI API. OPENAI_API_KEY is maintained exclusively server-side. Your raw personal passwords, JWT cookies, and secrets are never sent to AI providers.</p>
-        <h2 className="text-lg font-semibold text-foreground">Data Security</h2>
-        <p>All authentication tokens are secured in httpOnly, SameSite=Lax cookies. Your data is isolated per account and never sold or shared with unauthorized third parties.</p>
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto max-w-4xl px-5 py-12">
+        <div className="mb-8 flex items-center justify-between"><Brand /><Link href="/login" className={outlineButton}>Sign in</Link></div>
+        <h1 className="text-3xl font-bold tracking-tight">Privacy Policy</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Last updated: September 3, 2026</p>
+        <div className="mt-8 space-y-8 text-sm text-muted-foreground leading-7">
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Overview</h2>
+            <p>At INTERVUE AI, we take your privacy seriously. This Privacy Policy explains what information we collect, how we use it, and the choices you have. INTERVUE AI is a technical interview preparation platform for students and professionals.</p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Information We Collect</h2>
+            <ul className="list-disc pl-5 space-y-1.5">
+              <li><strong className="text-foreground">Account data:</strong> Name, email address, and hashed password (or Google OAuth identity) when you register.</li>
+              <li><strong className="text-foreground">Profile data:</strong> College, degree, graduation year, target role, target companies — entered voluntarily.</li>
+              <li><strong className="text-foreground">Activity data:</strong> Quiz attempt responses, coding submissions, AI tutor messages, interview session transcripts, and Group Discussion contributions. This data powers your personalized readiness analytics.</li>
+              <li><strong className="text-foreground">Resume data:</strong> If you voluntarily upload a resume (PDF, DOCX, or text), we extract text to identify skill keywords for gap analysis against your target role. The raw file is stored only while needed for analysis. It is never shared with other users or used for purposes other than your own preparation profile.</li>
+              <li><strong className="text-foreground">Usage data:</strong> Standard server logs including IP address, browser type, and timestamps for security and performance monitoring.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Camera and Microphone</h2>
+            <p>During AI Mock Interview sessions, your browser may request access to your camera and microphone. This access is requested solely to enable the interview simulation experience in your browser.</p>
+            <ul className="list-disc pl-5 mt-2 space-y-1.5">
+              <li>Your raw webcam video stream is processed locally in your browser and is <strong className="text-foreground">not recorded, stored, or transmitted</strong> to our servers.</li>
+              <li>Microphone input is used for optional speech-to-text transcription. Spoken text is processed locally via the Web Speech API (a browser-native API) and only the resulting transcript text is used.</li>
+              <li>You may deny camera or microphone permission at any time. Text-based interview input remains available as a fallback.</li>
+              <li>Camera and microphone permissions are browser-controlled. We never request or retain raw audio or video data on our servers.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">How We Use OpenAI Services</h2>
+            <p>AI Tutor sessions and AI Mock Interview evaluation are powered by the OpenAI API (GPT-4o-mini). When you send a message to the AI Tutor or submit an interview answer:</p>
+            <ul className="list-disc pl-5 mt-2 space-y-1.5">
+              <li>Your message text is sent to OpenAI's API server-side only. The API key is never exposed to the browser.</li>
+              <li>Your raw passwords, authentication tokens, and cookies are never included in AI requests.</li>
+              <li>OpenAI's own data usage policies apply to content processed through their API. See <a href="https://openai.com/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">openai.com/privacy</a> for details.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Data Security</h2>
+            <ul className="list-disc pl-5 space-y-1.5">
+              <li>Passwords are hashed using bcrypt and are never stored in plain text.</li>
+              <li>Authentication sessions use httpOnly, SameSite=Lax JWT cookies to prevent XSS and CSRF attacks.</li>
+              <li>All data is isolated per account. You cannot access another user's data.</li>
+              <li>API endpoints enforce ownership checks on all user-specific resources.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Data Retention</h2>
+            <p>Account data, quiz attempts, interview sessions, and tutor conversations are retained while your account is active. If you delete your account, your personal data will be removed from our database. Anonymized aggregate statistics may be retained for platform improvement.</p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Third-Party Services</h2>
+            <ul className="list-disc pl-5 space-y-1.5">
+              <li><strong className="text-foreground">Google OAuth:</strong> If you sign in with Google, we receive your name and email from Google. We do not receive your Google password.</li>
+              <li><strong className="text-foreground">Vercel Analytics:</strong> We use Vercel Analytics in production for anonymized page-view statistics. No personal identifiers are collected.</li>
+              <li><strong className="text-foreground">Neon (PostgreSQL):</strong> Your data is stored in a Neon-managed PostgreSQL database with encryption at rest.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Your Rights</h2>
+            <p>You may request access to, correction of, or deletion of your personal data at any time by contacting us. You may update your profile information from the Profile page at any time.</p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Changes to This Policy</h2>
+            <p>We may update this Privacy Policy as the platform evolves. The "Last updated" date at the top of this page reflects the most recent revision.</p>
+          </section>
+
+        </div>
+        <div className="mt-10 border-t border-border pt-6 flex gap-4">
+          <Link href="/terms" className={outlineButton}>Terms of Service</Link>
+          <Link href="/login" className={button}>Sign In</Link>
+        </div>
       </div>
     </div>
   )
@@ -4801,16 +5392,75 @@ function PrivacyPage() {
 
 function TermsPage() {
   return (
-    <div className="mx-auto max-w-4xl px-5 py-12">
-      <div className="mb-8 flex items-center justify-between"><Brand /><Link href="/login" className={outlineButton}>Sign in</Link></div>
-      <h1 className="text-3xl font-bold tracking-tight">Terms of Service</h1>
-      <p className="mt-2 text-sm text-muted-foreground">Last updated: September 3, 2026</p>
-      <div className="mt-6 space-y-6 text-sm text-muted-foreground leading-relaxed">
-        <p>Welcome to INTERVUE AI. By using our platform, you agree to these Terms of Service.</p>
-        <h2 className="text-lg font-semibold text-foreground">Use of Platform</h2>
-        <p>INTERVUE AI is designed for individual student and professional interview preparation. You agree to use the platform in compliance with applicable laws and not to attempt reverse-engineering, automated scraping, or rate-limit circumvention.</p>
-        <h2 className="text-lg font-semibold text-foreground">Account Responsibility</h2>
-        <p>You are responsible for maintaining the confidentiality of your account credentials. You may not share your account or use unauthorized client IDs to bypass server controls.</p>
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto max-w-4xl px-5 py-12">
+        <div className="mb-8 flex items-center justify-between"><Brand /><Link href="/login" className={outlineButton}>Sign in</Link></div>
+        <h1 className="text-3xl font-bold tracking-tight">Terms of Service</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Last updated: September 3, 2026</p>
+        <div className="mt-8 space-y-8 text-sm text-muted-foreground leading-7">
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Agreement</h2>
+            <p>Welcome to INTERVUE AI. By accessing or using our platform, you agree to be bound by these Terms of Service. If you do not agree, please do not use the platform.</p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Use of Platform</h2>
+            <p>INTERVUE AI is designed for individual student and professional interview and placement preparation. You agree to:</p>
+            <ul className="list-disc pl-5 mt-2 space-y-1.5">
+              <li>Use the platform only for personal, non-commercial preparation purposes.</li>
+              <li>Comply with all applicable laws and regulations.</li>
+              <li>Not attempt to reverse-engineer, scrape, or automate API access beyond normal use.</li>
+              <li>Not attempt to circumvent rate limits, authentication, or access controls.</li>
+              <li>Not upload content (including resume files) that you do not have the right to share.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Account Responsibility</h2>
+            <p>You are responsible for maintaining the confidentiality of your account credentials. You may not share your account with others or use unauthorized credentials to access the platform. You are responsible for all activity that occurs under your account.</p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">AI-Generated Content Disclaimer</h2>
+            <p>INTERVUE AI uses OpenAI's API to generate tutoring responses, interview questions, and evaluation feedback. AI-generated content:</p>
+            <ul className="list-disc pl-5 mt-2 space-y-1.5">
+              <li>May occasionally contain inaccuracies. It should be used as a study aid, not as a definitive or authoritative source.</li>
+              <li>Does not constitute professional career advice, legal advice, or guaranteed assessment of your skills.</li>
+              <li>Is generated based on your inputs. Do not include sensitive personal information (e.g., national ID numbers, financial details) in your messages.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">No Placement Guarantee</h2>
+            <p>INTERVUE AI is a preparation tool. We do not guarantee employment, job placement, interview success, or any specific career outcome. Readiness scores and analytics are calculated from your activity on the platform and are indicators of practice engagement, not guarantees of real-world performance.</p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Camera and Microphone</h2>
+            <p>You may grant camera and microphone access for the AI Mock Interview experience. By doing so, you confirm you understand that video is not stored on our servers and that microphone input is used for speech-to-text transcription only within your browser session.</p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Intellectual Property</h2>
+            <p>All platform code, design, curriculum content, and branding belong to INTERVUE AI. Your personal data (quiz answers, interview transcripts, etc.) remains yours. We use it solely to deliver the service described in our Privacy Policy.</p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Termination</h2>
+            <p>We reserve the right to suspend or terminate accounts that violate these Terms or engage in abusive behavior. You may delete your account at any time from the Profile page.</p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Changes to Terms</h2>
+            <p>We may update these Terms as the platform evolves. Continued use of the platform after changes constitutes acceptance of the updated Terms. The "Last updated" date at the top reflects the most recent revision.</p>
+          </section>
+
+        </div>
+        <div className="mt-10 border-t border-border pt-6 flex gap-4">
+          <Link href="/privacy" className={outlineButton}>Privacy Policy</Link>
+          <Link href="/login" className={button}>Sign In</Link>
+        </div>
       </div>
     </div>
   )
@@ -4924,15 +5574,15 @@ function LandingPage() {
           </Link>
         </div>
 
-        {/* Feature Cards Grid */}
-        <div className="mt-20 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-left w-full">
+        {/* Feature Cards Grid — 8 features */}
+        <div className="mt-20 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 text-left w-full">
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 flex flex-col gap-3 shadow-xl">
             <div className="size-10 rounded-xl bg-rose-500/10 text-rose-400 grid place-items-center">
               <Video className="size-5" />
             </div>
-            <h3 className="font-semibold text-white text-base">Real AI Interviewer</h3>
+            <h3 className="font-semibold text-white text-base">AI Mock Interview</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Interactive 2-panel video call with speech-synchronized talking canvas avatar, voice recognition, and real-time evaluation.
+              Live 2-panel video call with a speech-synchronized talking AI interviewer, real-time evaluation, and per-question feedback.
             </p>
           </div>
 
@@ -4942,7 +5592,7 @@ function LandingPage() {
             </div>
             <h3 className="font-semibold text-white text-base">7-Mode AI Tutor</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Role-aware mentor supporting Learn, Practice, Hints, Mistake Analysis, Interview Prep, Revision, and Role Readiness.
+              Adaptive Socratic mentor supporting Learn, Practice, Hints, Mistake Analysis, Interview Prep, Revision, and Role Readiness modes.
             </p>
           </div>
 
@@ -4950,9 +5600,9 @@ function LandingPage() {
             <div className="size-10 rounded-xl bg-emerald-500/10 text-emerald-400 grid place-items-center">
               <Code2 className="size-5" />
             </div>
-            <h3 className="font-semibold text-white text-base">Coding Sandbox</h3>
+            <h3 className="font-semibold text-white text-base">Coding Practice</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Solve placement algorithms with multi-language safe code validator and instant submission feedback.
+              Solve placement DSA and SQL problems with multi-language support, test case validation, and full submission history.
             </p>
           </div>
 
@@ -4960,10 +5610,77 @@ function LandingPage() {
             <div className="size-10 rounded-xl bg-amber-500/10 text-amber-400 grid place-items-center">
               <BarChart3 className="size-5" />
             </div>
-            <h3 className="font-semibold text-white text-base">Target Role Analytics</h3>
+            <h3 className="font-semibold text-white text-base">Readiness Analytics</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Track overall placement readiness score, radar skill breakdowns, and personalized weakness recommendations.
+              Track your readiness score, subject proficiency, quiz accuracy, and interview performance — all from real activity data.
             </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 flex flex-col gap-3 shadow-xl">
+            <div className="size-10 rounded-xl bg-violet-500/10 text-violet-400 grid place-items-center">
+              <Users className="size-5" />
+            </div>
+            <h3 className="font-semibold text-white text-base">Group Discussion</h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Practice structured GD sessions with AI participants across Analytical, Confident, and Devil's Advocate personas. Get scored on communication and leadership.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 flex flex-col gap-3 shadow-xl">
+            <div className="size-10 rounded-xl bg-cyan-500/10 text-cyan-400 grid place-items-center">
+              <Briefcase className="size-5" />
+            </div>
+            <h3 className="font-semibold text-white text-base">Resume Analysis</h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Upload your resume to extract skill keywords and automatically identify gaps against your target role's requirements.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 flex flex-col gap-3 shadow-xl">
+            <div className="size-10 rounded-xl bg-fuchsia-500/10 text-fuchsia-400 grid place-items-center">
+              <Target className="size-5" />
+            </div>
+            <h3 className="font-semibold text-white text-base">Role Preparation</h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Choose your target role (SDE, Data Engineer, PM, and more) and get a personalized skill gap analysis and prioritized preparation plan.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 flex flex-col gap-3 shadow-xl">
+            <div className="size-10 rounded-xl bg-orange-500/10 text-orange-400 grid place-items-center">
+              <Building2 className="size-5" />
+            </div>
+            <h3 className="font-semibold text-white text-base">Company-Wise Prep</h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Follow a 12-stage preparation roadmap tailored to specific companies — from TCS and Infosys to Amazon and Google.
+            </p>
+          </div>
+        </div>
+
+        {/* How It Works */}
+        <div className="mt-24 w-full text-left">
+          <p className="text-xs font-semibold uppercase tracking-[.15em] text-primary mb-3">How It Works</p>
+          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-10">Your complete preparation journey</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {([
+              ['1', 'Choose Your Role', 'Select a target role from our catalog — SDE, Data Engineer, PM, Analyst, and more — to unlock a personalized preparation plan.'],
+              ['2', 'Upload Your Resume', 'Optionally upload your resume. We extract skill keywords to verify what you already have and what you need to build.'],
+              ['3', 'Identify Skill Gaps', 'The Three-Source Skill Model compares your resume skills, quiz performance, and topic progress against your target role requirements.'],
+              ['4', 'Get a Personalized Path', 'Receive a sequenced, priority-ranked learning path that adapts as your performance improves.'],
+              ['5', 'Learn with AI Tutor', 'Study any topic using 7 adaptive modes — from concept walkthroughs and Socratic hints to interview prep and mistake analysis.'],
+              ['6', 'Practice Quizzes & Coding', 'Test your knowledge with subject quizzes and solve placement-style coding problems with test case validation.'],
+              ['7', 'AI Interview + Group Discussion', 'Rehearse with a talking AI interviewer and practice structured Group Discussions with AI participants.'],
+              ['8', 'Track Readiness Score', 'Your readiness score updates in real time based on quiz accuracy, coding acceptance rate, and interview evaluation scores.'],
+              ['9', 'Target Your Company', 'Follow a 12-stage company-specific roadmap and build confidence for your actual placement drive.'],
+            ] as [string, string, string][]).map(([num, title, desc]) => (
+              <div key={num} className="flex gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary">{num}</span>
+                <div>
+                  <p className="font-semibold text-white text-sm mb-1">{title}</p>
+                  <p className="text-xs text-zinc-400 leading-relaxed">{desc}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </main>
@@ -4979,6 +5696,7 @@ function LandingPage() {
     </div>
   )
 }
+
 
 // ============================================================
 // STAGE 17: GROUP DISCUSSION COMPONENT
@@ -5036,6 +5754,11 @@ function getParticipantColor(type: string, persona: string | null): string {
   if (type === 'MODERATOR') return '#8b5cf6'
   if (type === 'USER') return '#10b981'
   const colors: Record<string, string> = {
+    Confident: '#3b82f6',
+    Analytical: '#10b981',
+    Opposing: '#ef4444',
+    Balanced: '#f59e0b',
+    Quiet: '#8b5cf6',
     Analyst: '#3b82f6',
     "Devil's Advocate": '#ef4444',
     Synthesizer: '#f59e0b',
@@ -5048,16 +5771,33 @@ function getParticipantInitials(name: string): string {
   return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
 }
 
-function GDAvatar({ participant, size = 'md' }: { participant: { name: string; type: string; persona: string | null }; size?: 'sm' | 'md' | 'lg' }) {
+function GDAvatar({
+  participant,
+  size = 'md',
+  isSpeaking = false,
+}: {
+  participant: { name: string; type: string; persona: string | null }
+  size?: 'sm' | 'md' | 'lg'
+  isSpeaking?: boolean
+}) {
   const color = getParticipantColor(participant.type, participant.persona)
-  const sizeClass = size === 'sm' ? 'size-7 text-[10px]' : size === 'lg' ? 'size-12 text-base' : 'size-9 text-xs'
+  const sizeClass = size === 'sm' ? 'size-8 text-[10px]' : size === 'lg' ? 'size-14 text-base' : 'size-10 text-xs'
   return (
-    <div
-      className={`${sizeClass} flex items-center justify-center rounded-full font-bold text-white flex-shrink-0`}
-      style={{ backgroundColor: color }}
-      title={`${participant.name} — ${participant.persona || participant.type}`}
-    >
-      {participant.type === 'MODERATOR' ? '⚖' : getParticipantInitials(participant.name)}
+    <div className="relative inline-flex flex-col items-center">
+      <div
+        className={`${sizeClass} flex items-center justify-center rounded-full font-bold text-white flex-shrink-0 transition-all duration-300 ${
+          isSpeaking ? 'ring-4 ring-primary ring-offset-2 ring-offset-background scale-105 shadow-lg' : ''
+        }`}
+        style={{ backgroundColor: color }}
+        title={`${participant.name} — ${participant.persona || participant.type}`}
+      >
+        {participant.type === 'MODERATOR' ? '⚖' : getParticipantInitials(participant.name)}
+      </div>
+      {isSpeaking && (
+        <span className="absolute -bottom-1 flex items-center gap-0.5 rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-bold text-primary-foreground shadow">
+          <Radio className="size-2.5 animate-pulse" /> Speaking
+        </span>
+      )}
     </div>
   )
 }
@@ -5093,8 +5833,20 @@ function GroupDiscussion() {
   const [createError, setCreateError] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [setupRounds, setSetupRounds] = useState(5)
-  const [setupParticipants, setSetupParticipants] = useState(3)
+  const [setupParticipants, setSetupParticipants] = useState(4)
   const [setupCustomTopic, setSetupCustomTopic] = useState('')
+  const [setupMode, setSetupMode] = useState<'AI_GD' | 'REAL_MEMBER_GD' | 'MIXED_GD'>('AI_GD')
+  const [activeSpeakerName, setActiveSpeakerName] = useState<string | null>(null)
+  const [showTranscript, setShowTranscript] = useState(true)
+  const [useTextFallback, setUseTextFallback] = useState(false)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+
+  // Web Speech API states
+  const [isListening, setIsListening] = useState(false)
+  const [speechSupported, setSpeechSupported] = useState(false)
+  const [micMuted, setMicMuted] = useState(false)
+  const [micNotice, setMicNotice] = useState('')
+  const recognitionRef = useRef<any>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -5106,12 +5858,106 @@ function GroupDiscussion() {
   }, [])
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+      setSpeechSupported(true)
+      const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      const rec = new SpeechRecognitionClass()
+      rec.continuous = true
+      rec.interimResults = true
+      rec.lang = 'en-US'
+
+      rec.onresult = (event: any) => {
+        let transcript = ''
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript
+        }
+        if (transcript.trim()) {
+          setContributionText(transcript.trim())
+        }
+      }
+
+      rec.onerror = (e: any) => {
+        console.warn('[STT Error]', e.error)
+        setIsListening(false)
+        if (e.error === 'not-allowed') {
+          setMicNotice('Microphone permission blocked. Using text fallback mode.')
+          setUseTextFallback(true)
+        }
+      }
+
+      rec.onend = () => {
+        setIsListening(false)
+      }
+
+      recognitionRef.current = rec
+    }
+  }, [])
+
+  // Timer effect for active session
+  useEffect(() => {
+    let timer: any = null
+    if (screen === 'active' && activeSession && activeSession.status !== 'COMPLETED') {
+      timer = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1)
+      }, 1000)
+    } else {
+      setElapsedSeconds(0)
+    }
+    return () => clearInterval(timer)
+  }, [screen, activeSession])
+
+  useEffect(() => {
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
   }, [visibleContributions])
 
+  function speakText(text: string, persona: string | null) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
+    try {
+      window.speechSynthesis.cancel()
+      const utterance = new SpeechSynthesisUtterance(text)
+      const pitchMap: Record<string, number> = { Confident: 1.05, Analytical: 0.95, Opposing: 0.9, Balanced: 1.1, Quiet: 0.85 }
+      const rateMap: Record<string, number> = { Confident: 1.05, Analytical: 0.95, Opposing: 1.1, Balanced: 1.0, Quiet: 0.9 }
+      utterance.pitch = pitchMap[persona || ''] || 1.0
+      utterance.rate = rateMap[persona || ''] || 1.0
+      window.speechSynthesis.speak(utterance)
+    } catch {
+      // Ignore audio synthesis errors silently
+    }
+  }
+
+  function toggleListening() {
+    if (!recognitionRef.current) {
+      setMicNotice('Browser speech recognition not supported. Please type your response.')
+      setUseTextFallback(true)
+      return
+    }
+    if (isListening) {
+      recognitionRef.current.stop()
+      setIsListening(false)
+    } else {
+      try {
+        setMicNotice('')
+        recognitionRef.current.start()
+        setIsListening(true)
+      } catch {
+        setIsListening(false)
+      }
+    }
+  }
+
+  function handleSurpriseTopic() {
+    const randomItem = getRandomGDTopic()
+    setSetupCustomTopic(randomItem.topic)
+  }
+
   async function handleCreateSession() {
+    if (setupMode === 'REAL_MEMBER_GD') {
+      setCreateError('Real Member GD (Multiplayer) is preview-only in Stage 1. Using AI GD for live discussion.')
+      setSetupMode('AI_GD')
+      return
+    }
     setCreating(true)
     setCreateError('')
     try {
@@ -5122,19 +5968,28 @@ function GroupDiscussion() {
           topic: setupCustomTopic.trim() || undefined,
           participantCount: setupParticipants,
           totalRounds: setupRounds,
+          mode: setupMode,
         }),
       })
       const data = await res.json()
       if (!res.ok) {
-        setCreateError(data.error || 'Failed to create GD session')
+        setCreateError(data.error || 'Failed to create GD session. Please try again.')
         return
       }
       const sess: GDSessionData = data.session
       setActiveSession(sess)
       setVisibleContributions(sess.contributions)
       setScreen('active')
+      setElapsedSeconds(0)
+
+      // Speak opening moderator line if available
+      if (sess.contributions.length > 0) {
+        speakText(sess.contributions[0].content, 'Moderator')
+        setActiveSpeakerName('Moderator')
+        setTimeout(() => setActiveSpeakerName(null), 3000)
+      }
     } catch {
-      setCreateError('Network error. Please try again.')
+      setCreateError('Network connection issue. Please check your connection and try again.')
     } finally {
       setCreating(false)
     }
@@ -5153,6 +6008,10 @@ function GroupDiscussion() {
 
   async function handleSubmitContribution() {
     if (!activeSession || !contributionText.trim() || submitting) return
+    if (isListening && recognitionRef.current) {
+      try { recognitionRef.current.stop() } catch {}
+      setIsListening(false)
+    }
     setSubmitting(true)
     setSubmitError('')
     const text = contributionText.trim()
@@ -5166,7 +6025,7 @@ function GroupDiscussion() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setSubmitError(data.error || 'Failed to submit contribution')
+        setSubmitError(data.error || 'Failed to submit contribution. Retrying...')
         setContributionText(text)
         return
       }
@@ -5183,20 +6042,26 @@ function GroupDiscussion() {
         : prev
       )
 
-      // Animate turns one by one with 900ms delay
+      // Animate turns one by one with live TTS speaking
       setAnimatingTurns(true)
       for (let i = 0; i < newContribs.length; i++) {
-        await new Promise((resolve) => setTimeout(resolve, i === 0 ? 0 : 900))
-        setVisibleContributions((prev) => [...prev, newContribs[i]])
+        const item = newContribs[i]
+        await new Promise((resolve) => setTimeout(resolve, i === 0 ? 0 : 1100))
+        setVisibleContributions((prev) => [...prev, item])
+        setActiveSpeakerName(item.participantName)
+        if (item.participantType !== 'USER') {
+          speakText(item.content, item.participantPersona)
+        }
       }
       setAnimatingTurns(false)
+      setTimeout(() => setActiveSpeakerName(null), 2500)
 
       if (data.sessionStatus === 'COMPLETED') {
-        await new Promise((resolve) => setTimeout(resolve, 1200))
+        await new Promise((resolve) => setTimeout(resolve, 1500))
         setScreen('result')
       }
     } catch {
-      setSubmitError('Network error. Please try again.')
+      setSubmitError('Connection error. Your text has been preserved so you can retry.')
       setContributionText(text)
     } finally {
       setSubmitting(false)
@@ -5205,11 +6070,13 @@ function GroupDiscussion() {
 
   async function handleAbandon() {
     if (!activeSession) return
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
     await fetch(`/api/gd/${activeSession.id}/abandon`, { method: 'POST' })
     setScreen('list')
     setActiveSession(null)
     setVisibleContributions([])
-    // Refresh list
     const res = await fetch('/api/gd?limit=20')
     if (res.ok) { const d = await res.json(); if (d?.sessions) setSessions(d.sessions) }
   }
@@ -5237,11 +6104,10 @@ function GroupDiscussion() {
       <div className="flex flex-col gap-7">
         <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">Stage 17</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">AI Group Discussion</h1>
+            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">Stage 17 Upgrade</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">AI Group Discussion (GD) Engine</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Practice GDs with AI participants — Analyst, Devil&apos;s Advocate, Synthesizer — on role-relevant topics.
-              Get scored on Communication, Relevance, Depth, Leadership &amp; Originality.
+              Participate in realistic, voice-first placement GD simulations with 5 distinct AI personalities — Confident, Analytical, Opposing, Balanced, and Quiet.
             </p>
           </div>
           <button
@@ -5288,7 +6154,7 @@ function GroupDiscussion() {
             <div>
               <p className="text-lg font-semibold">No GD sessions yet</p>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Start your first AI Group Discussion to practise speaking in a simulated GD environment.
+                Start your first AI Group Discussion to practise speaking in a realistic placement GD environment.
               </p>
             </div>
             <button onClick={() => setScreen('setup')} className={button}>
@@ -5362,22 +6228,58 @@ function GroupDiscussion() {
           </button>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">New GD Session</p>
-            <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">Configure Your GD</h1>
+            <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">Configure Your GD Room</h1>
+          </div>
+        </div>
+
+        {/* Mode Selector */}
+        <div className={`${card} p-6`}>
+          <h2 className="mb-2 text-base font-semibold">Choose GD Mode</h2>
+          <p className="mb-4 text-sm text-muted-foreground">Select your preferred discussion environment.</p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              { id: 'AI_GD', label: '🤖 AI GD', desc: 'Candidate + 4 AI participants with distinct personas' },
+              { id: 'REAL_MEMBER_GD', label: '👥 Real Member GD', desc: 'Live multiplayer room with real candidates (Preview)' },
+              { id: 'MIXED_GD', label: '🔀 Mixed GD', desc: 'Candidate + Real members + AI personas' },
+            ].map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setSetupMode(m.id as any)}
+                className={`flex flex-col text-left p-4 rounded-xl border transition ${
+                  setupMode === m.id
+                    ? 'border-primary bg-primary/10 text-foreground ring-2 ring-primary/30'
+                    : 'border-border bg-card text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                <span className="font-bold text-sm text-foreground">{m.label}</span>
+                <span className="mt-1 text-xs">{m.desc}</span>
+              </button>
+            ))}
           </div>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Topic */}
           <div className={`${card} flex flex-col gap-5 p-6 lg:col-span-2`}>
-            <div>
-              <h2 className="text-base font-semibold">Topic</h2>
-              <p className="text-sm text-muted-foreground">Leave blank for an AI-generated topic tailored to your target role.</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold">GD Topic</h2>
+                <p className="text-sm text-muted-foreground">Type a custom topic or click &ldquo;Surprise Me&rdquo; for a fresh placement topic.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSurpriseTopic}
+                className={`${outlineButton} py-1.5 px-3 text-xs`}
+              >
+                <SparklesIcon className="size-3.5 text-primary" /> Surprise Me (Random Topic)
+              </button>
             </div>
             <textarea
               id="gd-custom-topic"
               value={setupCustomTopic}
               onChange={(e) => setSetupCustomTopic(e.target.value)}
-              placeholder="E.g. Should AI replace human decision-making in high-stakes domains? (optional)"
+              placeholder="E.g. Will Artificial Intelligence Create More Jobs Than It Destroys? (Leave blank for random)"
               className="w-full rounded-lg border border-border bg-background px-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
               rows={2}
               maxLength={300}
@@ -5387,11 +6289,11 @@ function GroupDiscussion() {
           {/* Rounds */}
           <div className={`${card} flex flex-col gap-4 p-6`}>
             <div>
-              <h2 className="text-base font-semibold">Rounds</h2>
-              <p className="text-sm text-muted-foreground">Number of speaking turns each participant gets.</p>
+              <h2 className="text-base font-semibold">Discussion Rounds</h2>
+              <p className="text-sm text-muted-foreground">Number of discussion turns each participant gets.</p>
             </div>
             <div className="flex gap-2 flex-wrap">
-              {[3, 4, 5, 6, 8].map((n) => (
+              {[1, 3, 5, 8].map((n) => (
                 <button
                   key={n}
                   onClick={() => setSetupRounds(n)}
@@ -5401,7 +6303,7 @@ function GroupDiscussion() {
                       : 'border-border text-muted-foreground hover:bg-accent'
                   }`}
                 >
-                  {n} rounds
+                  {n} {n === 1 ? 'Round (Quick)' : 'Rounds'}
                 </button>
               ))}
             </div>
@@ -5410,11 +6312,11 @@ function GroupDiscussion() {
           {/* Participants */}
           <div className={`${card} flex flex-col gap-4 p-6`}>
             <div>
-              <h2 className="text-base font-semibold">AI Participants</h2>
-              <p className="text-sm text-muted-foreground">Number of AI participants alongside you.</p>
+              <h2 className="text-base font-semibold">Group Size</h2>
+              <p className="text-sm text-muted-foreground">Total participants including you.</p>
             </div>
             <div className="flex gap-2">
-              {[2, 3, 4].map((n) => (
+              {[4, 5, 6].map((n) => (
                 <button
                   key={n}
                   onClick={() => setSetupParticipants(n)}
@@ -5424,32 +6326,36 @@ function GroupDiscussion() {
                       : 'border-border text-muted-foreground hover:bg-accent'
                   }`}
                 >
-                  {n - 1} AI + You
+                  {n - 1} AI + You ({n} total)
                 </button>
               ))}
             </div>
           </div>
 
-          {/* AI Personas Preview */}
+          {/* 5 AI Personas Preview */}
           <div className={`${card} p-6 lg:col-span-2`}>
-            <h2 className="mb-4 text-base font-semibold">AI Participant Personas</h2>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <h2 className="mb-4 text-base font-semibold">AI Participant Personalities</h2>
+            <div className="grid gap-3 sm:grid-cols-5">
               {[
-                { name: 'Analyst', desc: 'Data-driven, fact-focused, challenges unsupported claims', color: '#3b82f6' },
-                { name: "Devil's Advocate", desc: 'Challenges every point to stress-test arguments', color: '#ef4444' },
-                { name: 'Synthesizer', desc: 'Bridges perspectives and finds common ground', color: '#f59e0b' },
-                { name: 'Pragmatist', desc: 'Focuses on implementation, cost, and feasibility', color: '#06b6d4' },
+                { name: 'Rahul', persona: 'Confident', desc: 'Bold claims, leads discussion, challenges opinions', color: '#3b82f6' },
+                { name: 'Ananya', persona: 'Analytical', desc: 'Fact-focused, uses metrics & logical reasoning', color: '#10b981' },
+                { name: 'Vikram', persona: 'Opposing', desc: 'Presents counter-views, stress-tests claims', color: '#ef4444' },
+                { name: 'Priya', persona: 'Balanced', desc: 'Synthesizes viewpoints, seeks common ground', color: '#f59e0b' },
+                { name: 'Rohan', persona: 'Quiet', desc: 'Speaks selectively, delivers concise insights', color: '#8b5cf6' },
               ].map((p) => (
-                <div key={p.name} className="flex items-start gap-3 rounded-xl border border-border p-3">
+                <div key={p.name} className="flex flex-col items-center text-center gap-2 rounded-xl border border-border p-3">
                   <div
-                    className="size-9 flex-shrink-0 grid place-items-center rounded-full font-bold text-white text-xs"
+                    className="size-10 grid place-items-center rounded-full font-bold text-white text-xs shadow-sm"
                     style={{ background: p.color }}
                   >
                     {p.name.slice(0, 2).toUpperCase()}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold">{p.name}</p>
-                    <p className="text-xs text-muted-foreground">{p.desc}</p>
+                    <p className="text-xs font-bold text-foreground">{p.name}</p>
+                    <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: `${p.color}20`, color: p.color }}>
+                      {p.persona}
+                    </span>
+                    <p className="mt-1 text-[11px] text-muted-foreground leading-tight">{p.desc}</p>
                   </div>
                 </div>
               ))}
@@ -5474,12 +6380,12 @@ function GroupDiscussion() {
             {creating ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
-                <span>Generating topic…</span>
+                <span>Preparing Room…</span>
               </>
             ) : (
               <>
                 <Users className="size-4" />
-                Start GD
+                Start GD Room
               </>
             )}
           </button>
@@ -5488,201 +6394,201 @@ function GroupDiscussion() {
     )
   }
 
-  // ── ACTIVE screen ─────────────────────────────────────────────────────────────
+  // ── ACTIVE VOICE-FIRST LIVE ROOM screen ──────────────────────────────────────
   if (screen === 'active' && activeSession) {
-    const currentPhase = animatingTurns
-      ? 'AI SPEAKING'
-      : activeSession.status === 'CLOSING'
-      ? 'CLOSING'
-      : `ROUND ${activeSession.currentRound + 1} OF ${activeSession.totalRounds}`
+    const formatTime = (secs: number) => {
+      const m = Math.floor(secs / 60)
+      const s = secs % 60
+      return `${m}:${s < 10 ? '0' : ''}${s}`
+    }
 
     return (
-      <div className="flex flex-col gap-0" style={{ height: 'calc(100vh - 8rem)' }}>
-        {/* Header */}
-        <div className={`${card} mb-4 flex items-center justify-between gap-4 px-5 py-3 flex-shrink-0`}>
+      <div className="flex flex-col gap-4" style={{ height: 'calc(100vh - 8rem)' }}>
+        {/* Room Top Header Bar */}
+        <div className={`${card} flex items-center justify-between gap-4 px-5 py-3 flex-shrink-0`}>
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex-shrink-0 grid size-9 place-items-center rounded-full bg-primary/10">
-              <Users className="size-4 text-primary" />
+              <Radio className="size-4 text-primary animate-pulse" />
             </div>
             <div className="min-w-0">
-              <p className="truncate font-semibold text-sm">{activeSession.topic}</p>
-              <p className="text-xs text-muted-foreground">{activeSession.topicContext.slice(0, 80)}…</p>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-emerald-500/20 text-emerald-400 px-2 py-0.5 text-[10px] font-bold uppercase">
+                  LIVE GD ROOM
+                </span>
+                <span className="text-xs text-muted-foreground font-mono">⏱ {formatTime(elapsedSeconds)}</span>
+              </div>
+              <p className="truncate font-semibold text-sm mt-0.5">{activeSession.topic}</p>
             </div>
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
-            <span
-              className="rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wide"
-              style={{
-                background: animatingTurns ? '#f59e0b20' : '#10b98120',
-                color: animatingTurns ? '#f59e0b' : '#10b981',
-              }}
-            >
-              {currentPhase}
+            <span className="text-xs font-semibold text-muted-foreground">
+              Round {activeSession.currentRound + 1}/{activeSession.totalRounds}
             </span>
-            {/* Participants */}
-            <div className="hidden sm:flex items-center gap-1">
-              {activeSession.participants.map((p) => (
-                <GDAvatar key={p.id} participant={p} size="sm" />
-              ))}
-            </div>
+            <button
+              onClick={() => setShowTranscript((prev) => !prev)}
+              className={`${outlineButton} py-1 px-3 text-xs`}
+            >
+              {showTranscript ? 'Hide Transcript' : 'Show Transcript'}
+            </button>
             <button
               onClick={handleAbandon}
-              className="grid size-8 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition"
-              title="Leave GD"
+              className="grid size-9 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition"
+              title="Leave Room"
             >
               <PhoneOff className="size-4" />
             </button>
           </div>
         </div>
 
-        {/* Chat area */}
-        <div className={`${card} flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4 min-h-0`}>
-          {visibleContributions.map((c, idx) => {
-            const isUser = c.participantType === 'USER'
-            const isModerator = c.participantType === 'MODERATOR'
-            const participantObj = activeSession.participants.find((p) => p.id === c.participantId) || {
-              name: c.participantName,
-              type: c.participantType as 'USER' | 'AI' | 'MODERATOR',
-              persona: c.participantPersona,
-              avatarSeed: null,
-            }
-            const color = getParticipantColor(c.participantType, c.participantPersona)
+        {/* Live Room Participant Grid Area */}
+        <div className={`${card} p-6 flex flex-col items-center justify-center flex-shrink-0 bg-muted/20 relative overflow-hidden min-h-[220px]`}>
+          <div className="mb-4 text-center">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              {activeSpeakerName ? `🔊 ${activeSpeakerName} is speaking…` : animatingTurns ? 'AI Participants Responding…' : 'Microphone Ready — Speak your opinion'}
+            </p>
+          </div>
 
-            return (
-              <div
-                key={c.id}
-                className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} ${isModerator ? 'justify-center' : ''}`}
-                style={{
-                  animation: idx === visibleContributions.length - 1 ? 'fadeSlideIn 0.35s ease-out' : undefined,
-                }}
-              >
-                {!isModerator && <GDAvatar participant={participantObj} size="md" />}
-
-                <div className={`flex max-w-[75%] flex-col gap-1 ${isUser ? 'items-end' : 'items-start'} ${isModerator ? 'max-w-[80%] items-center w-full' : ''}`}>
-                  {!isModerator && (
-                    <div className={`flex items-center gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
-                      <span className="text-xs font-semibold" style={{ color }}>{c.participantName}</span>
-                      {c.participantPersona && c.participantPersona !== 'Candidate' && (
-                        <span className="rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: `${color}20`, color }}>
-                          {c.participantPersona}
-                        </span>
-                      )}
-                      <span className="text-[10px] text-muted-foreground">R{c.round}</span>
-                    </div>
-                  )}
-
-                  <div
-                    className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                      isUser
-                        ? 'rounded-tr-sm bg-primary text-primary-foreground'
-                        : isModerator
-                        ? 'rounded-xl border border-border bg-muted text-muted-foreground text-center text-xs italic py-2 px-6'
-                        : 'rounded-tl-sm border border-border bg-card'
-                    }`}
-                  >
-                    {c.content}
+          <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-10">
+            {activeSession.participants.map((p) => {
+              const isSpeaking = activeSpeakerName === p.name || (animatingTurns && p.type === 'AI')
+              return (
+                <div key={p.id} className="flex flex-col items-center gap-2">
+                  <GDAvatar participant={p} size="lg" isSpeaking={isSpeaking} />
+                  <div className="text-center">
+                    <p className="text-xs font-bold">{p.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{p.persona || (p.type === 'USER' ? 'Candidate (You)' : p.type)}</p>
                   </div>
-
-                  {/* User score chip */}
-                  {isUser && c.evaluation && (
-                    <div className="flex items-center gap-2 mt-1">
-                      <span
-                        className="rounded-full px-2.5 py-0.5 text-xs font-bold"
-                        style={{
-                          background: c.evaluation.overallScore >= 70 ? '#10b98120' : c.evaluation.overallScore >= 50 ? '#f59e0b20' : '#ef444420',
-                          color: c.evaluation.overallScore >= 70 ? '#10b981' : c.evaluation.overallScore >= 50 ? '#f59e0b' : '#ef4444',
-                        }}
-                      >
-                        {c.evaluation.overallScore}/100
-                      </span>
-                      <span className="text-[10px] text-muted-foreground truncate max-w-[200px]">
-                        {c.evaluation.feedback.slice(0, 60)}…
-                      </span>
-                    </div>
-                  )}
                 </div>
-              </div>
-            )
-          })}
-
-          {/* Typing indicator */}
-          {animatingTurns && (
-            <div className="flex gap-3 items-end">
-              <div className="size-9 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                <Bot className="size-4 text-muted-foreground" />
-              </div>
-              <div className="rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3">
-                <div className="flex gap-1">
-                  <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={chatEndRef} />
+              )
+            })}
+          </div>
         </div>
 
-        {/* Latest score sidebar (mobile hidden, desktop shown) */}
-        {latestUserEval && (
-          <div className="hidden xl:flex mt-3 items-center gap-4 rounded-xl border border-border bg-muted/40 px-5 py-3 flex-shrink-0">
-            <span className="text-xs font-semibold text-muted-foreground">Last turn:</span>
-            <div className="flex gap-4 flex-wrap">
-              {[
-                { label: 'Comm', val: latestUserEval.communicationScore, color: '#3b82f6' },
-                { label: 'Relev', val: latestUserEval.relevanceScore, color: '#10b981' },
-                { label: 'Depth', val: latestUserEval.depthScore, color: '#8b5cf6' },
-                { label: 'Lead', val: latestUserEval.leadershipScore, color: '#f59e0b' },
-                { label: 'Orig', val: latestUserEval.originalityScore, color: '#ef4444' },
-              ].map((d) => (
-                <div key={d.label} className="flex items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground">{d.label}:</span>
-                  <span className="text-xs font-bold" style={{ color: d.color }}>{d.val}/20</span>
+        {/* Live Transcript / Speech Area */}
+        {showTranscript && (
+          <div className={`${card} flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4 min-h-0`}>
+            {visibleContributions.map((c, idx) => {
+              const isUser = c.participantType === 'USER'
+              const isModerator = c.participantType === 'MODERATOR'
+              const participantObj = activeSession.participants.find((p) => p.id === c.participantId) || {
+                name: c.participantName,
+                type: c.participantType as 'USER' | 'AI' | 'MODERATOR',
+                persona: c.participantPersona,
+                avatarSeed: null,
+              }
+              const color = getParticipantColor(c.participantType, c.participantPersona)
+
+              return (
+                <div
+                  key={c.id}
+                  className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} ${isModerator ? 'justify-center' : ''}`}
+                >
+                  {!isModerator && <GDAvatar participant={participantObj} size="md" />}
+                  <div className={`flex max-w-[80%] flex-col gap-1 ${isUser ? 'items-end' : 'items-start'} ${isModerator ? 'max-w-[85%] items-center w-full' : ''}`}>
+                    {!isModerator && (
+                      <div className={`flex items-center gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
+                        <span className="text-xs font-semibold" style={{ color }}>{c.participantName}</span>
+                        {c.participantPersona && c.participantPersona !== 'Candidate' && (
+                          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: `${color}20`, color }}>
+                            {c.participantPersona}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground">R{c.round}</span>
+                      </div>
+                    )}
+                    <div
+                      className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                        isUser
+                          ? 'rounded-tr-sm bg-primary text-primary-foreground'
+                          : isModerator
+                          ? 'rounded-xl border border-border bg-muted text-muted-foreground text-center text-xs italic py-2 px-6'
+                          : 'rounded-tl-sm border border-border bg-card'
+                      }`}
+                    >
+                      {c.content}
+                    </div>
+                  </div>
                 </div>
-              ))}
-              <div className="flex items-center gap-1.5 border-l border-border pl-3">
-                <span className="text-xs text-muted-foreground">Total:</span>
-                <span className="text-xs font-bold text-primary">{latestUserEval.overallScore}/100</span>
-              </div>
-            </div>
+              )
+            })}
+            <div ref={chatEndRef} />
           </div>
         )}
 
-        {/* Input area */}
+        {/* Live Voice Interaction Toolbar (§19 Mandatory) */}
         {!isCompleted && (
-          <div className={`${card} mt-3 flex gap-3 px-4 py-3 flex-shrink-0`}>
-            <textarea
-              id="gd-contribution-input"
-              value={contributionText}
-              onChange={(e) => setContributionText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && !animatingTurns && !submitting) {
-                  e.preventDefault()
-                  handleSubmitContribution()
-                }
-              }}
-              placeholder={animatingTurns ? 'AI participants are speaking…' : 'Share your perspective… (Enter to submit, Shift+Enter for new line)'}
-              disabled={animatingTurns || submitting}
-              className="flex-1 resize-none rounded-lg border border-border bg-background px-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 min-h-[60px] max-h-[120px]"
-              rows={2}
-              maxLength={2000}
-            />
-            <div className="flex flex-col items-end justify-between gap-2">
-              <span className="text-[10px] text-muted-foreground tabular-nums">{contributionText.length}/2000</span>
-              <button
-                id="gd-submit-contribution-btn"
-                onClick={handleSubmitContribution}
-                disabled={!contributionText.trim() || animatingTurns || submitting}
-                className={`${button} px-3 py-2 disabled:opacity-50`}
-              >
-                {submitting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              </button>
+          <div className={`${card} p-4 flex flex-col gap-3 flex-shrink-0`}>
+            {micNotice && (
+              <p className="text-xs text-amber-400 font-medium text-center">{micNotice}</p>
+            )}
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleListening}
+                  className={`flex items-center gap-2 rounded-full px-5 py-2.5 font-bold text-xs transition ${
+                    isListening
+                      ? 'bg-red-500 text-white animate-pulse shadow-lg ring-4 ring-red-500/30'
+                      : 'bg-primary text-primary-foreground hover:opacity-90'
+                  }`}
+                >
+                  {isListening ? (
+                    <>
+                      <MicOff className="size-4" /> Stop Mic (Listening…)
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="size-4" /> Speak into Mic
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setUseTextFallback((prev) => !prev)}
+                  className={`${outlineButton} text-xs py-2 px-3`}
+                >
+                  {useTextFallback ? 'Hide Keyboard Input' : 'Type Response Instead'}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSubmitContribution}
+                  disabled={!contributionText.trim() || submitting || animatingTurns}
+                  className={`${button} py-2 px-4 text-xs`}
+                >
+                  {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                  <span>Submit Turn</span>
+                </button>
+              </div>
             </div>
+
+            {/* Transcript Preview / Editable Input Area */}
+            {(useTextFallback || contributionText.length > 0) && (
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  id="gd-live-input"
+                  type="text"
+                  value={contributionText}
+                  onChange={(e) => setContributionText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !submitting && !animatingTurns && contributionText.trim()) {
+                      handleSubmitContribution()
+                    }
+                  }}
+                  placeholder="Spoken or typed response will appear here..."
+                  className="flex-1 rounded-lg border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+            )}
           </div>
         )}
 
         {submitError && (
-          <p className="mt-2 text-xs text-red-400 text-center">{submitError}</p>
+          <p className="text-xs text-red-400 text-center">{submitError}</p>
         )}
       </div>
     )
@@ -5692,7 +6598,10 @@ function GroupDiscussion() {
   if (screen === 'result' && activeSession) {
     const score = activeSession.overallScore ?? 0
     const scoreColor = score >= 70 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444'
-    const scoreLabel = score >= 80 ? 'Outstanding' : score >= 70 ? 'Strong Performance' : score >= 55 ? 'Good Effort' : score >= 40 ? 'Needs Improvement' : 'Keep Practising'
+    const scoreLabel = score >= 80 ? 'Outstanding GD Performance' : score >= 70 ? 'Strong Performance' : score >= 55 ? 'Good Effort' : 'Keep Practising'
+
+    const allUserContribs = visibleContributions.filter((c) => c.participantType === 'USER')
+    const bestMomentObj = allUserContribs.sort((a, b) => (b.evaluation?.overallScore ?? 0) - (a.evaluation?.overallScore ?? 0))[0]
 
     const allImprovements = Array.from(
       new Set(allUserEvals.flatMap((e) => e.improvements))
@@ -5705,22 +6614,22 @@ function GroupDiscussion() {
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">GD Complete</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight">Your GD Results</h1>
+            <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">GD Evaluation Complete</p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight">Group Discussion Report</h1>
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => { setScreen('list'); setActiveSession(null); setVisibleContributions([]) }}
               className={outlineButton}
             >
-              ← Back to List
+              ← Back to Sessions
             </button>
             <button
               onClick={() => { setScreen('setup'); setActiveSession(null); setVisibleContributions([]) }}
               className={button}
             >
               <Users className="size-4" />
-              New GD
+              New GD Room
             </button>
           </div>
         </div>
@@ -5728,7 +6637,7 @@ function GroupDiscussion() {
         {/* Score hero */}
         <div className={`${card} flex flex-col items-center gap-4 py-10 text-center`} style={{ background: `${scoreColor}08`, borderColor: `${scoreColor}30` }}>
           <div
-            className="grid size-28 place-items-center rounded-full text-4xl font-bold text-white"
+            className="grid size-28 place-items-center rounded-full text-4xl font-bold text-white shadow-md"
             style={{ background: `conic-gradient(${scoreColor} ${score * 3.6}deg, #1e1e2e 0)` }}
           >
             <div className="grid size-20 place-items-center rounded-full bg-card">
@@ -5737,7 +6646,7 @@ function GroupDiscussion() {
           </div>
           <div>
             <p className="text-xl font-semibold" style={{ color: scoreColor }}>{scoreLabel}</p>
-            <p className="text-sm text-muted-foreground mt-1">GD Topic: {activeSession.topic}</p>
+            <p className="text-sm text-muted-foreground mt-1">Topic: {activeSession.topic}</p>
           </div>
           {activeSession.overallFeedback && (
             <p className="max-w-lg text-sm leading-6 text-muted-foreground italic px-4">
@@ -5746,9 +6655,26 @@ function GroupDiscussion() {
           )}
         </div>
 
+        {/* Best Moment Highlight Card */}
+        {bestMomentObj && (
+          <div className={`${card} p-5 bg-primary/5 border-primary/20`}>
+            <p className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+              <SparklesIcon className="size-4" /> Best Moment in Discussion
+            </p>
+            <blockquote className="mt-2 text-sm italic font-medium text-foreground">
+              &ldquo;{bestMomentObj.content}&rdquo;
+            </blockquote>
+            {bestMomentObj.evaluation && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Evaluated Score: <span className="font-bold text-primary">{bestMomentObj.evaluation.overallScore}/100</span> — {bestMomentObj.evaluation.feedback}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Dimension scores */}
         <div className={`${card} p-6`}>
-          <h2 className="mb-5 text-base font-semibold">Score Breakdown</h2>
+          <h2 className="mb-5 text-base font-semibold">Dimension Breakdown</h2>
           <div className="flex flex-col gap-4">
             <GDScoreBar label="Communication" value={Math.round(avgComm * 10) / 10} color="#3b82f6" />
             <GDScoreBar label="Relevance" value={Math.round(avgRel * 10) / 10} color="#10b981" />
@@ -5763,7 +6689,7 @@ function GroupDiscussion() {
           {allStrengths.length > 0 && (
             <div className={`${card} p-5`}>
               <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-emerald-400">
-                <CheckCircle2 className="size-4" /> Strengths
+                <CheckCircle2 className="size-4" /> Key Strengths
               </h2>
               <ul className="flex flex-col gap-2">
                 {allStrengths.map((s, i) => (
@@ -5790,35 +6716,6 @@ function GroupDiscussion() {
               </ul>
             </div>
           )}
-        </div>
-
-        {/* Per-round transcript */}
-        <div className={`${card} p-5`}>
-          <h2 className="mb-4 text-base font-semibold">Your Contributions</h2>
-          <div className="flex flex-col gap-4">
-            {visibleContributions.filter((c) => c.participantType === 'USER').map((c, i) => (
-              <div key={c.id} className="rounded-xl border border-border p-4 flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-muted-foreground">Round {c.round}</span>
-                  {c.evaluation && (
-                    <span
-                      className="rounded-full px-2.5 py-0.5 text-xs font-bold"
-                      style={{
-                        background: c.evaluation.overallScore >= 70 ? '#10b98120' : '#f59e0b20',
-                        color: c.evaluation.overallScore >= 70 ? '#10b981' : '#f59e0b',
-                      }}
-                    >
-                      {c.evaluation.overallScore}/100
-                    </span>
-                  )}
-                </div>
-                <p className="text-sm leading-relaxed">{c.content}</p>
-                {c.evaluation && (
-                  <p className="text-xs text-muted-foreground italic">{c.evaluation.feedback}</p>
-                )}
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     )
@@ -6388,6 +7285,15 @@ export default function IntervueApp() {
   const auth = pathname === '/login' || pathname === '/register'
   const unauthPage = pathname === '/forgot-password' || pathname === '/reset-password' || pathname === '/verify-email'
 
+  // Global cleanup effect to stop SpeechSynthesis audio on navigation between tabs
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel()
+      } catch {}
+    }
+  }, [pathname])
+
   // Fetch the current authenticated user on mount (for protected pages)
   useEffect(() => {
     if (auth || unauthPage) return
@@ -6453,6 +7359,15 @@ export default function IntervueApp() {
               {user && !user.emailVerifiedAt && <EmailVerificationBanner userEmail={user.email} />}
               <Dashboard />
             </main>
+            <footer className="border-t border-border px-5 py-4 md:px-8">
+              <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span>© {new Date().getFullYear()} INTERVUE AI</span>
+                <div className="flex items-center gap-4">
+                  <Link href="/privacy" className="hover:text-foreground transition">Privacy Policy</Link>
+                  <Link href="/terms" className="hover:text-foreground transition">Terms of Service</Link>
+                </div>
+              </div>
+            </footer>
           </div>
         </div>
       </div>
@@ -6495,6 +7410,15 @@ export default function IntervueApp() {
             {user && !user.emailVerifiedAt && <EmailVerificationBanner userEmail={user.email} />}
             {page}
           </main>
+          <footer className="border-t border-border px-5 py-4 md:px-8">
+            <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span>© {new Date().getFullYear()} INTERVUE AI</span>
+              <div className="flex items-center gap-4">
+                <Link href="/privacy" className="hover:text-foreground transition">Privacy Policy</Link>
+                <Link href="/terms" className="hover:text-foreground transition">Terms of Service</Link>
+              </div>
+            </div>
+          </footer>
         </div>
       </div>
     </div>

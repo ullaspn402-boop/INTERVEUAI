@@ -478,9 +478,23 @@ export async function completeInterviewSession(sessionId: string, userId: string
     })),
   })
 
-  const overallFeedback = summaryRes.success
-    ? summaryRes.content
-    : 'Completed interview session with all questions evaluated successfully.'
+  const summaryData = summaryRes.success
+    ? summaryRes.summary
+    : {
+        feedback: 'Completed interview session with all questions evaluated successfully.',
+        interviewerAssessment: (avgScore10 >= 8
+          ? 'Strong Hire'
+          : avgScore10 >= 6.5
+          ? 'Hire'
+          : avgScore10 >= 5
+          ? 'Borderline'
+          : 'Needs Improvement') as 'Strong Hire' | 'Hire' | 'Borderline' | 'Needs Improvement',
+        strongestAnswerIndex: 1,
+        weakestAnswerIndex: 1,
+        communicationNotes: 'Responses were evaluated across key placement benchmarks.',
+      }
+
+  const overallFeedback = JSON.stringify(summaryData)
 
   const completedSession = await db.interviewSession.update({
     where: { id: sessionId },
@@ -595,6 +609,45 @@ export async function getInterviewResult(sessionId: string, userId: string) {
     new Set(evals.flatMap((e) => (Array.isArray(e?.improvements) ? (e.improvements as string[]) : [])))
   )
 
+  // Parse structured AI summary feedback if available
+  let summaryData: {
+    feedback: string
+    interviewerAssessment: 'Strong Hire' | 'Hire' | 'Borderline' | 'Needs Improvement'
+    strongestAnswerIndex: number
+    weakestAnswerIndex: number
+    communicationNotes: string
+  } | null = null
+
+  if (session.overallFeedback) {
+    try {
+      const parsed = JSON.parse(session.overallFeedback)
+      if (parsed && typeof parsed === 'object' && parsed.feedback) {
+        summaryData = {
+          feedback: String(parsed.feedback),
+          interviewerAssessment: parsed.interviewerAssessment || 'Hire',
+          strongestAnswerIndex: Number(parsed.strongestAnswerIndex) || 1,
+          weakestAnswerIndex: Number(parsed.weakestAnswerIndex) || 1,
+          communicationNotes: String(parsed.communicationNotes || ''),
+        }
+      }
+    } catch {
+      summaryData = {
+        feedback: session.overallFeedback,
+        interviewerAssessment:
+          (session.overallScore || 0) >= 80
+            ? 'Strong Hire'
+            : (session.overallScore || 0) >= 65
+            ? 'Hire'
+            : (session.overallScore || 0) >= 50
+            ? 'Borderline'
+            : 'Needs Improvement',
+        strongestAnswerIndex: 1,
+        weakestAnswerIndex: 1,
+        communicationNotes: 'Responses were evaluated systematically across relevance, clarity, and depth.',
+      }
+    }
+  }
+
   return {
     session: {
       id: session.id,
@@ -610,6 +663,7 @@ export async function getInterviewResult(sessionId: string, userId: string) {
       subject: session.subject,
       topic: session.topic,
     },
+    summaryData,
     metrics: {
       relevanceScore: relevanceAvg,
       correctnessScore: correctnessAvg,

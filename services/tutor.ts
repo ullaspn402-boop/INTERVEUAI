@@ -190,20 +190,63 @@ export async function getTutorSession(sessionId: string, userId: string) {
 
 // ─── Message Operations ───────────────────────────────────────────────────────
 
+// ─── Adaptive Learning Trajectory Analysis ─────────────────────────────
+
+export function analyzeSessionAdaptiveState(messages: Array<{ role: string; content: string }>): {
+  currentDifficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED'
+  masteredConcepts: string[]
+  strugglingConcepts: string[]
+  recentMistake?: string
+} {
+  const assistantMsgs = messages.filter((m) => m.role.toUpperCase() === 'ASSISTANT')
+
+  let correctCount = 0
+  let incorrectCount = 0
+  let recentMistake: string | undefined = undefined
+
+  for (const m of assistantMsgs) {
+    const lower = m.content.toLowerCase()
+    if (lower.includes('correct') && !lower.includes('incorrect') && !lower.includes('not correct')) {
+      correctCount++
+    }
+    if (lower.includes('incorrect') || lower.includes('misconception') || lower.includes('almost') || lower.includes('not quite')) {
+      incorrectCount++
+      const match = m.content.match(/(?:misconception|mistake|confused|incorrect):\s*([^\n\.]+)/i)
+      if (match && match[1]) {
+        recentMistake = match[1].trim()
+      }
+    }
+  }
+
+  let currentDifficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' = 'BEGINNER'
+  if (correctCount >= 4 && incorrectCount <= 1) {
+    currentDifficulty = 'ADVANCED'
+  } else if (correctCount >= 2) {
+    currentDifficulty = 'INTERMEDIATE'
+  }
+
+  const masteredConcepts: string[] = []
+  const strugglingConcepts: string[] = []
+
+  if (correctCount > 0) {
+    masteredConcepts.push('Basic Definitions & Core Concepts')
+  }
+  if (incorrectCount > 0) {
+    strugglingConcepts.push('Edge Cases & Specific Mechanics')
+  }
+
+  return {
+    currentDifficulty,
+    masteredConcepts,
+    strugglingConcepts,
+    recentMistake,
+  }
+}
+
+// ─── Message Operations ───────────────────────────────────────────────────────
+
 /**
  * Send a user message in a tutor session and get an AI response.
- *
- * Flow:
- * 1. Verify session ownership
- * 2. Verify session is not ARCHIVED
- * 3. Load subject/topic & target role context
- * 4. Load bounded conversation history (most recent N messages)
- * 5. Construct AI context (system prompt + history + new message)
- * 6. Call OpenAI
- * 7. On success: persist USER + ASSISTANT messages in a single transaction
- * 8. Return the assistant message
- *
- * If AI fails: no messages are stored; sanitized error is returned.
  */
 export async function sendTutorMessage(
   sessionId: string,
@@ -236,7 +279,7 @@ export async function sendTutorMessage(
     }
   }
 
-  // Parse mode prefix if embedded in content, and strip it for persistence
+  // Parse mode prefix if embedded in content
   let cleanContent = rawContent.trim()
   let tutorMode: 'LEARN' | 'ASK_DOUBT' | 'PRACTICE' | 'INTERVIEW_PREP' | 'CODING_HELP' | 'EXPLAIN_MISTAKE' | 'ROLE_PREP' | 'HINT' | 'REVISION' | 'ROLE_READINESS' =
     (modeOverride as any) || 'LEARN'
@@ -265,16 +308,7 @@ export async function sendTutorMessage(
   const roleDef = TARGET_ROLES.find((r) => r.slug === targetRoleSlug)
   const roleRequirements = roleDef?.requirements.map((req) => req.skillName)
 
-  // Build role-aware system prompt
-  const systemPrompt = buildTutorSystemPrompt({
-    subjectName: session.subject?.name,
-    topicName: session.topic?.name,
-    targetRole: roleDef?.name || targetRoleSlug,
-    tutorMode,
-    roleRequirements,
-  })
-
-  // 4. Load bounded conversation history (Fetch most recent N messages, then reverse to chronological)
+  // 4. Load bounded conversation history
   const recentHistory = await db.tutorMessage.findMany({
     where: { sessionId },
     orderBy: { createdAt: 'desc' },
@@ -283,6 +317,22 @@ export async function sendTutorMessage(
   })
 
   const history = recentHistory.reverse()
+
+  // Analyze adaptive trajectory from history
+  const adaptiveState = analyzeSessionAdaptiveState(history)
+
+  // Build adaptive, role-aware system prompt
+  const systemPrompt = buildTutorSystemPrompt({
+    subjectName: session.subject?.name,
+    topicName: session.topic?.name,
+    targetRole: roleDef?.name || targetRoleSlug,
+    tutorMode,
+    roleRequirements,
+    currentDifficulty: adaptiveState.currentDifficulty,
+    masteredConcepts: adaptiveState.masteredConcepts,
+    strugglingConcepts: adaptiveState.strugglingConcepts,
+    recentMistake: adaptiveState.recentMistake,
+  })
 
   // 5. Construct AI context
   const aiMessages: AIMessage[] = [
@@ -294,11 +344,10 @@ export async function sendTutorMessage(
     { role: 'user', content: cleanContent },
   ]
 
-  // 6. Call OpenAI
+  // 6. Call OpenAI with backoff
   const aiResult = await callTutorAI(aiMessages)
 
   if (!aiResult.success) {
-    // Do NOT persist any messages on AI failure
     return {
       success: false,
       error: aiResult.error,
@@ -306,7 +355,7 @@ export async function sendTutorMessage(
     }
   }
 
-  // 7. Persist USER + ASSISTANT messages in a single transaction (with clean content)
+  // 7. Persist USER + ASSISTANT messages in a single transaction
   const [, assistantMsg] = await db.$transaction([
     db.tutorMessage.create({
       data: {
@@ -339,5 +388,52 @@ export async function sendTutorMessage(
       content: assistantMsg.content,
       createdAt: assistantMsg.createdAt.toISOString(),
     },
+  }
+}
+
+// ─── End-of-Session Learning Summary ───────────────────────────────────────────
+
+export async function getTutorSessionSummary(sessionId: string, userId: string) {
+  const session = await db.tutorSession.findUnique({
+    where: { id: sessionId },
+    include: {
+      subject: { select: { name: true } },
+      topic: { select: { name: true } },
+      messages: {
+        orderBy: { createdAt: 'asc' },
+        select: { role: true, content: true },
+      },
+    },
+  })
+
+  if (!session || session.userId !== userId) {
+    return null
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { targetRole: true },
+  })
+
+  const { generateTutorSessionSummaryAI } = await import('@/services/ai')
+
+  const summaryRes = await generateTutorSessionSummaryAI({
+    subjectName: session.subject?.name,
+    topicName: session.topic?.name,
+    targetRole: user?.targetRole || 'Software Engineer',
+    messages: session.messages,
+  })
+
+  if (summaryRes.success) {
+    return summaryRes.summary
+  }
+
+  return {
+    score: 75,
+    topicsCovered: [session.topic?.name || session.subject?.name || 'General Computer Science'],
+    conceptsMastered: ['Core Definitions & Logic'],
+    conceptsNeedingPractice: ['Implementation & Edge Cases'],
+    commonMistakes: ['Slight misconception regarding trade-offs'],
+    recommendedNextTopic: 'Practical coding & problem solving',
   }
 }

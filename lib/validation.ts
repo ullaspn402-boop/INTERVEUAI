@@ -291,8 +291,9 @@ export type ResendVerificationInput = z.infer<typeof ResendVerificationSchema>
 export const CreateGDSessionSchema = z.object({
   topic: z.string().trim().max(300).optional(),
   targetRole: z.string().trim().max(200).optional(),
-  participantCount: z.coerce.number().int().min(2).max(4).default(3),
-  totalRounds: z.coerce.number().int().min(3).max(8).default(5),
+  mode: z.enum(['AI_GD', 'REAL_MEMBER_GD', 'MIXED_GD']).default('AI_GD'),
+  participantCount: z.coerce.number().int().min(2).max(6).default(4),
+  totalRounds: z.coerce.number().int().min(1).max(8).default(5),
 })
 
 export type CreateGDSessionInput = z.infer<typeof CreateGDSessionSchema>
