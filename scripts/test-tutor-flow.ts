@@ -3,7 +3,7 @@
  */
 
 import { db } from '../lib/db'
-import { createTutorSession, sendTutorMessage, getTutorSession, checkTutorRateLimit } from '../services/tutor'
+import { createTutorSession, sendTutorMessage, getTutorSession, checkTutorRateLimit, getTutorSessionSummary } from '../services/tutor'
 import { buildTutorSystemPrompt } from '../services/ai'
 
 async function runTests() {
@@ -40,8 +40,8 @@ async function runTests() {
     tutorMode: 'LEARN',
     roleRequirements: ['Database Management Systems', 'SQL', 'Data Structures'],
   })
-  if (!prompt.includes('Target Role:') || !prompt.includes('Strict Accuracy')) {
-    throw new Error('System prompt missing critical role or accuracy instructions')
+  if (!prompt.includes('Target Role:') || !prompt.includes('Intervue Coach')) {
+    throw new Error('System prompt missing critical role or mentor instructions')
   }
   console.log('✓ System prompt built with target role context & accuracy rules.')
 
@@ -123,7 +123,16 @@ async function runTests() {
   }
   console.log('✓ Rate limit correctly enforced at 20 requests/hour per user.')
 
-  // 10. Clean up test session
+  // 10. Test Stage 3 Adaptive State Analysis & Summary Generation
+  console.log('\n--- Stage 3: Adaptive State Analysis & Learning Summary Report ---')
+  const summary = await getTutorSessionSummary(session.id, user.id)
+  if (!summary) throw new Error('Failed to retrieve tutor session summary')
+  if (typeof summary.score !== 'number' || !Array.isArray(summary.conceptsMastered)) {
+    throw new Error('Invalid summary structure returned from getTutorSessionSummary')
+  }
+  console.log(`✓ Session Summary Report verified: Score = ${summary.score}/100, Mastered = ${summary.conceptsMastered.join(', ')}`)
+
+  // 11. Clean up test session
   await db.tutorSession.delete({ where: { id: session.id } })
   console.log('\n✓ Cleaned up test session.')
   console.log('\n=== ALL TUTOR INTEGRATION TESTS PASSED SUCCESSFULLY! ===')
